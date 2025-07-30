@@ -1,6 +1,7 @@
 # MCP サーバーコア仕様書
 
-作成日時: 2025-07-30 02:05
+作成日時: 2025-07-30 02:05  
+更新日時: 2025-07-30 13:30  
 参照計画: 001-01-project-setup.md
 
 ## 概要
@@ -13,12 +14,13 @@ Obsidian vault 操作用 MCP サーバーのコア機能仕様書です。JSON-R
 
 ```text
 src/
-├── main.rs              # CLIエントリーポイント、ログ初期化
+├── main.rs              # CLIエントリーポイント、早期ログ初期化
 ├── lib.rs               # ライブラリルート（AppError, AppResult公開）
 ├── error.rs             # カスタムエラー型定義
 ├── config/
 │   ├── mod.rs           # 設定モジュール
-│   └── settings.rs      # TOML設定ファイル処理
+│   ├── settings.rs      # TOML設定ファイル処理
+│   └── logging.rs       # ログ機能独立モジュール
 ├── mcp/
 │   ├── mod.rs           # MCPモジュール
 │   ├── server.rs        # MCPサーバー実装（同期/非同期対応）
@@ -64,26 +66,45 @@ path = "/path/to/obsidian/vault"
 [server]
 name = "obsidian-vault"
 version = "0.1.0"
-
-[logging]
-level = "info"
-file = "logs/mcp-server.log"
-console = true
 ```
 
 #### Settings 構造体
 
 - **VaultConfig**: Obsidian vault 設定
 - **ServerConfig**: サーバー基本情報
-- **LoggingConfig**: ログ出力設定（ファイル/コンソール制御）
 
 #### 機能
 
 - **自動生成**: 設定ファイル不存在時のデフォルト設定作成
-- **バリデーション**: ログレベル、パス存在確認
+- **バリデーション**: パス存在確認
 - **ホームディレクトリ検索**: dirs crate による設定ファイル位置解決
 
-### 3. MCP サーバー（mcp/server.rs）
+### 3. ログ管理（config/logging.rs）
+
+#### ログ初期化戦略
+
+1. **早期初期化**: アプリケーション起動時に環境変数ベースで初期化
+2. **設定分離**: `Settings` 構造体からログ設定を独立
+3. **環境変数制御**: `RUST_LOG` による標準的なログレベル制御
+
+#### LoggingConfig 構造体
+
+```rust
+pub struct LoggingConfig {
+    pub level: String,
+    pub file: Option<String>,
+    pub console: bool,
+}
+```
+
+**注意**: この Config 構造体は将来の拡張用に保持されていますが、現在のログ制御は環境変数 `RUST_LOG` で行います。
+
+#### 初期化メソッド
+
+- **`init_early_logging()`**: 環境変数またはデフォルト設定での早期初期化
+- **`validate()`**: ログレベル設定の妥当性検証
+
+### 4. MCP サーバー（mcp/server.rs）
 
 #### 動作モード
 
@@ -97,12 +118,13 @@ console = true
 
 #### 処理フロー
 
-1. **初期化**: 設定読み込み、ログセットアップ
-2. **リクエスト受信**: STDIN から JSON-RPC 読み取り
-3. **プロトコル処理**: ProtocolHandler に委譲
-4. **レスポンス送信**: STDOUT に JSON-RPC 応答
+1. **早期ログ初期化**: 環境変数ベースのログセットアップ
+2. **設定読み込み**: TOML 設定ファイル読み込み
+3. **リクエスト受信**: STDIN から JSON-RPC 読み取り
+4. **プロトコル処理**: ProtocolHandler に委譲
+5. **レスポンス送信**: STDOUT に JSON-RPC 応答
 
-### 4. プロトコルハンドラ（mcp/protocol.rs）
+### 5. プロトコルハンドラ（mcp/protocol.rs）
 
 #### サポートメソッド
 
@@ -119,7 +141,7 @@ console = true
 - **PARSE_ERROR (-32700)**: JSON 解析エラー
 - **INTERNAL_ERROR (-32603)**: 内部処理エラー
 
-### 5. 型定義（mcp/types.rs）
+### 6. 型定義（mcp/types.rs）
 
 #### 主要型
 
@@ -129,7 +151,7 @@ console = true
 - **ToolsListResult**: ツール一覧結果
 - **CallToolParams/Result**: ツール実行パラメータ・結果
 
-### 6. ツール登録フレームワーク（tools/registry.rs）
+### 7. ツール登録フレームワーク（tools/registry.rs）
 
 #### Tool トレイト
 
@@ -155,18 +177,55 @@ pub trait Tool: Send + Sync {
 
 ## ログ機能
 
+### アーキテクチャ変更（2025-07-30 更新）
+
+#### 設計改善の背景
+
+初回実装後、ログ初期化タイミングの問題が判明しました：
+
+- **問題**: ログ初期化が `Settings::load()` 後に実行されるため、設定ファイル読み込み時の `debug!` マクロが表示されない
+- **解決**: ログ機能を `config/logging.rs` に分離し、早期初期化を実装
+
+#### 現在のログ制御方式
+
+1. **環境変数制御**: `RUST_LOG` 環境変数による標準的なログレベル制御
+2. **早期初期化**: アプリケーション起動時の即座ログセットアップ
+3. **設定ファイル独立**: ログ設定と他の設定の完全分離
+
+### 実装詳細
+
+#### 初期化順序
+
+```rust
+// main.rs での処理順序
+LoggingConfig::init_early_logging()?;  // 1. 早期ログ初期化
+let settings = Settings::load()?;       // 2. 設定読み込み（debug!が正常表示）
+```
+
+#### ログレベル制御
+
+- **開発時**: `RUST_LOG=debug cargo run` でデバッグログ表示
+- **運用時**: `RUST_LOG=info` または環境変数未設定で info レベル
+- **詳細調査**: `RUST_LOG=trace` で最詳細ログ
+
 ### 設定
 
-- **レベル制御**: RUST_LOG 環境変数または設定ファイル
-- **出力先制御**: ファイル/コンソール選択可能
-- **ローテーション**: 日次ファイルローテーション対応
+- **レベル制御**: `RUST_LOG` 環境変数による制御
+- **出力先**: コンソール（標準エラー出力）
+- **フォーマット**: 構造化ログ形式（タイムスタンプ、レベル、メッセージ）
 
 ### 実装
 
-- **tracing**: 構造化ログ
+- **tracing**: 構造化ログフレームワーク
 - **tracing-subscriber**: フィルター・フォーマット制御
-- **tracing-appender**: ファイル出力・ローテーション
-- **ANSI コード制御**: ファイル出力時は色情報除去
+- **EnvFilter**: 環境変数ベースのレベル制御
+
+#### 技術的利点
+
+1. **標準的なアプローチ**: Rust エコシステムの標準的なログ制御方式
+2. **シンプルな制御**: 環境変数一つでのログレベル制御
+3. **開発効率**: デバッグログの確実な表示
+4. **保守性**: ログ機能の独立とコードの単純化
 
 ## CLI インターフェース
 
@@ -182,10 +241,13 @@ pub trait Tool: Send + Sync {
 
 ```bash
 # 非同期モード（デフォルト）
-cargo run -- --vault ./my-vault
+RUST_LOG=info cargo run -- --vault ./my-vault
+
+# デバッグログ有効
+RUST_LOG=debug cargo run -- --vault ./my-vault
 
 # 同期モード
-cargo run -- --sync --vault ./my-vault
+RUST_LOG=info cargo run -- --sync --vault ./my-vault
 
 # カスタム設定ファイル
 cargo run -- --config ./custom-config.toml
@@ -204,8 +266,7 @@ cargo run -- --config ./custom-config.toml
 | clap               | 4.0        | CLI 引数処理         |
 | anyhow             | 1.0        | エラーハンドリング   |
 | tracing            | 0.1        | 構造化ログ           |
-| tracing-subscriber | 0.3        | ログ設定             |
-| tracing-appender   | 0.2        | ファイル出力         |
+| tracing-subscriber | 0.3        | ログ設定・フィルター |
 | dirs               | 5.0        | ディレクトリ検索     |
 | async-trait        | 0.1        | 非同期トレイト       |
 
@@ -245,4 +306,9 @@ cargo run -- --config ./custom-config.toml
 
 ## 変更履歴
 
-- **2025-07-30**: 初版作成、001-01 プラン実装完了時点
+- **2025-07-30 02:05**: 初版作成、001-01 プラン実装完了時点
+- **2025-07-30 13:30**: ログ設定分離アーキテクチャ改善反映
+  - `config/logging.rs` 追加
+  - 設定ファイルからログ設定削除
+  - 早期ログ初期化実装
+  - 環境変数による標準的ログ制御に変更

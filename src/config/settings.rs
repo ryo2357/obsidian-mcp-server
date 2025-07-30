@@ -7,7 +7,6 @@ use tracing::{debug, info, warn};
 pub struct Settings {
     pub vault: VaultConfig,
     pub server: ServerConfig,
-    pub logging: LoggingConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -21,13 +20,6 @@ pub struct ServerConfig {
     pub version: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LoggingConfig {
-    pub level: String,
-    pub file: Option<String>,
-    pub console: bool,
-}
-
 impl Default for Settings {
     fn default() -> Self {
         Self {
@@ -35,11 +27,6 @@ impl Default for Settings {
             server: ServerConfig {
                 name: "obsidian-vault".to_string(),
                 version: "0.1.0".to_string(),
-            },
-            logging: LoggingConfig {
-                level: "info".to_string(),
-                file: Some("logs/mcp-server.log".to_string()),
-                console: true,
             },
         }
     }
@@ -92,17 +79,6 @@ impl Settings {
     }
 
     fn validate(&self) -> AppResult<()> {
-        // ログレベルの検証
-        match self.logging.level.to_lowercase().as_str() {
-            "trace" | "debug" | "info" | "warn" | "error" => {}
-            _ => {
-                return Err(AppError::Config(format!(
-                    "Invalid log level: {}. Must be one of: trace, debug, info, warn, error",
-                    self.logging.level
-                )));
-            }
-        }
-
         // Vault パスの検証（設定されている場合）
         if let Some(ref vault_path) = self.vault.path {
             let path = Path::new(vault_path);
