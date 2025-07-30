@@ -1,27 +1,55 @@
 # 基本的なMCPプロトコルテスト (PowerShell版)
+# このスクリプトは実際にMCPサーバーに対してテストを実行します
 
-Write-Host "Testing MCP Server basic functionality..."
-
-# 初期化テスト
-'{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0.0"}}}' | Out-File -FilePath test-scripts\test_init.json -Encoding utf8
-
-# ツール一覧テスト
-'{"jsonrpc":"2.0","id":2,"method":"tools/list"}' | Out-File -FilePath test-scripts\test_tools_list.json -Encoding utf8
-
-# ツール実行テスト
-'{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"ping","arguments":{"message":"Hello World"}}}' | Out-File -FilePath test-scripts\test_tool_call.json -Encoding utf8
-
-Write-Host "Test files created successfully:"
-Write-Host "- test-scripts\test_init.json"
-Write-Host "- test-scripts\test_tools_list.json" 
-Write-Host "- test-scripts\test_tool_call.json"
-
+Write-Host "=== MCP Server Protocol Test ===" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "To test manually, run these commands from project root:"
-Write-Host "1. cargo run -- --sync --vault ./test-vault"
-Write-Host "2. Get-Content test-scripts\test_init.json | cargo run -- --sync --vault ./test-vault"
+
+# JSONテストデータの定義
+$InitializeJson = @'
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{"tools":{}},"clientInfo":{"name":"test","version":"1.0"}}}
+'@
+
+$ToolsListJson = @'
+{"jsonrpc":"2.0","id":2,"method":"tools/list"}
+'@
+
+$PingToolJson = @'
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"ping","arguments":{"message":"Hello from PowerShell Test!"}}}
+'@
+
+# テスト関数の定義
+function Test-MCPCommand {
+    param(
+        [string]$TestName,
+        [string]$JsonCommand
+    )
+    
+    Write-Host "Testing: $TestName" -ForegroundColor Yellow
+    Write-Host "Command: $JsonCommand" -ForegroundColor Gray
+    
+    try {
+        # JSONコマンドを標準入力経由でMCPサーバーに送信
+        $JsonCommand | cargo run -- --sync --vault ./test-vault 2>&1
+        Write-Host "✅ $TestName - SUCCESS" -ForegroundColor Green
+    }
+    catch {
+        Write-Host "❌ $TestName - FAILED: $_" -ForegroundColor Red
+    }
+    Write-Host ""
+}
+
+# テスト実行
+Write-Host "Starting MCP Server tests..." -ForegroundColor Cyan
 Write-Host ""
-Write-Host "Or test all at once:"
-Write-Host "Get-Content test-scripts\test_sequence.txt | cargo run -- --sync --vault ./test-vault"
-Write-Host ""
-Write-Host "Logs will be saved to logs\ directory"
+
+# 1. 初期化テスト
+Test-MCPCommand -TestName "Initialize Protocol" -JsonCommand $InitializeJson
+
+# 2. ツール一覧テスト  
+Test-MCPCommand -TestName "List Available Tools" -JsonCommand $ToolsListJson
+
+# 3. Ping ツール実行テスト
+Test-MCPCommand -TestName "Execute Ping Tool" -JsonCommand $PingToolJson
+
+Write-Host "=== Test Complete ===" -ForegroundColor Cyan
+Write-Host "Check logs/ directory for detailed server logs" -ForegroundColor Gray
