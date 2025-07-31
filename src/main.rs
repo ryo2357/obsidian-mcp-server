@@ -1,6 +1,7 @@
 mod config;
 mod error;
 mod mcp;
+mod vault;
 
 use clap::Parser;
 use config::Config;

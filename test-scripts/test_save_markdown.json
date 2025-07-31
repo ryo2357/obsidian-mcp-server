@@ -1,0 +1,12 @@
+{
+  "jsonrpc": "2.0",
+  "id": 3,
+  "method": "tools/call",
+  "params": {
+    "name": "save_markdown_file",
+    "arguments": {
+      "filename": "test-note",
+      "content": "# Test Note\n\nThis is a test markdown file created by the MCP server.\n\n- Item 1\n- Item 2\n- Item 3"
+    }
+  }
+}

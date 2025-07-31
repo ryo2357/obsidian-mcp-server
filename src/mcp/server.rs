@@ -1,7 +1,10 @@
 use crate::config::Config;
 use crate::error::{AppResult, McpError};
-use crate::mcp::protocol::{JsonRpcRequest, JsonRpcResponse, InitializeParams, InitializeResult, ServerInfo, ProtocolVersion, ServerCapabilities, ToolsCapability, ListToolsResult};
+use crate::mcp::protocol::{JsonRpcRequest, JsonRpcResponse, InitializeParams, InitializeResult, ServerInfo, ProtocolVersion, ServerCapabilities, ToolsCapability, ListToolsResult, Tool, CallToolParams, CallToolResult, ToolContent};
+use crate::mcp::tools::{execute_save_markdown_file, TARGET_DIRECTORY};
+use crate::vault::VaultOperations;
 use anyhow::Context;
+use serde_json::{json, Value};
 use std::io::{BufRead, BufReader, Write};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader as AsyncBufReader};
 
@@ -9,14 +12,26 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader as AsyncBufReader};
 pub struct McpServer {
     config: Config,
     initialized: bool,
+    vault_ops: Option<VaultOperations>,
 }
 
 impl McpServer {
     /// 新しい MCP サーバーを作成
     pub fn new(config: Config) -> Self {
+        // VaultOperationsを初期化（vault_pathが設定されている場合のみ）
+        let vault_ops = if let Ok(vault_path) = config.get_vault_path() {
+            Some(VaultOperations::new(
+                vault_path.clone(),
+                TARGET_DIRECTORY.to_string(),
+            ))
+        } else {
+            None
+        };
+
         Self {
             config,
             initialized: false,
+            vault_ops,
         }
     }
 
@@ -81,7 +96,8 @@ impl McpServer {
 
         let response = match request.method.as_str() {
             "initialize" => self.handle_initialize(&request),
-            "list_tools" => self.handle_list_tools(&request),
+            "tools/list" => self.handle_list_tools(&request),
+            "tools/call" => self.handle_call_tool(&request),
             method => {
                 let error = McpError::method_not_found(method);
                 JsonRpcResponse::error(request.id, error)
@@ -137,17 +153,108 @@ impl McpServer {
         JsonRpcResponse::success(request.id.clone(), result_value)
     }
 
-    /// list_tools リクエストを処理
+    /// tools/list リクエストを処理
     fn handle_list_tools(&self, request: &JsonRpcRequest) -> JsonRpcResponse {
         if !self.initialized {
             let error = McpError::internal_error("Server not initialized");
             return JsonRpcResponse::error(request.id.clone(), error);
         }
 
-        // 現在は空のツールリストを返す（001-02 で実装予定）
-        let result = ListToolsResult { tools: vec![] };
+        let mut tools = vec![];
+
+        // save_markdown_file ツールを追加（vault_opsが利用可能な場合のみ）
+        if self.vault_ops.is_some() {
+            tools.push(Tool {
+                name: "save_markdown_file".to_string(),
+                description: "Save a markdown file to the Obsidian vault".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "filename": {
+                            "type": "string",
+                            "description": "The filename for the markdown file (without .md extension)"
+                        },
+                        "content": {
+                            "type": "string",
+                            "description": "The markdown content to save"
+                        }
+                    },
+                    "required": ["filename", "content"]
+                }),
+            });
+        }
+
+        let result = ListToolsResult { tools };
 
         let result_value = serde_json::to_value(result).unwrap();
         JsonRpcResponse::success(request.id.clone(), result_value)
+    }
+
+    /// tools/call リクエストを処理
+    fn handle_call_tool(&self, request: &JsonRpcRequest) -> JsonRpcResponse {
+        if !self.initialized {
+            let error = McpError::internal_error("Server not initialized");
+            return JsonRpcResponse::error(request.id.clone(), error);
+        }
+
+        let params: CallToolParams = match &request.params {
+            Some(params) => match serde_json::from_value(params.clone()) {
+                Ok(p) => p,
+                Err(_) => {
+                    let error = McpError::invalid_params("Invalid call tool parameters");
+                    return JsonRpcResponse::error(request.id.clone(), error);
+                }
+            },
+            None => {
+                let error = McpError::invalid_params("Missing call tool parameters");
+                return JsonRpcResponse::error(request.id.clone(), error);
+            }
+        };
+
+        // ツールを実行
+        let result = match params.name.as_str() {
+            "save_markdown_file" => self.execute_save_markdown_file(params.arguments),
+            _ => {
+                let error = McpError::method_not_found(&format!("Tool not found: {}", params.name));
+                return JsonRpcResponse::error(request.id.clone(), error);
+            }
+        };
+
+        match result {
+            Ok(content) => {
+                let call_result = CallToolResult {
+                    content: vec![ToolContent {
+                        content_type: "text".to_string(),
+                        text: content,
+                    }],
+                    is_error: Some(false),
+                };
+                let result_value = serde_json::to_value(call_result).unwrap();
+                JsonRpcResponse::success(request.id.clone(), result_value)
+            }
+            Err(error) => {
+                let call_result = CallToolResult {
+                    content: vec![ToolContent {
+                        content_type: "text".to_string(),
+                        text: format!("Error: {}", error),
+                    }],
+                    is_error: Some(true),
+                };
+                let result_value = serde_json::to_value(call_result).unwrap();
+                JsonRpcResponse::success(request.id.clone(), result_value)
+            }
+        }
+    }
+
+    /// save_markdown_file ツールを実行
+    fn execute_save_markdown_file(&self, arguments: Option<Value>) -> Result<String, anyhow::Error> {
+        let vault_ops = self.vault_ops.as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Vault not configured"))?;
+
+        let args = arguments
+            .ok_or_else(|| anyhow::anyhow!("Missing arguments"))?;
+
+        let result = execute_save_markdown_file(vault_ops, args)?;
+        Ok(serde_json::to_string_pretty(&result)?)
     }
 }

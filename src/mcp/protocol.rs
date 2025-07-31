@@ -135,3 +135,26 @@ pub struct Tool {
 pub struct ListToolsResult {
     pub tools: Vec<Tool>,
 }
+
+/// ツール呼び出しリクエストパラメータ
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CallToolParams {
+    pub name: String,
+    pub arguments: Option<Value>,
+}
+
+/// ツール呼び出し結果
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CallToolResult {
+    pub content: Vec<ToolContent>,
+    #[serde(rename = "isError")]
+    pub is_error: Option<bool>,
+}
+
+/// ツールの出力コンテンツ
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolContent {
+    #[serde(rename = "type")]
+    pub content_type: String,
+    pub text: String,
+}

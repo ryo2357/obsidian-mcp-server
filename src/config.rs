@@ -3,18 +3,10 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 /// アプリケーション設定
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Config {
     /// Obsidian vault のパス
     pub vault_path: Option<PathBuf>,
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            vault_path: Some(PathBuf::from("./vault")),
-        }
-    }
 }
 
 
