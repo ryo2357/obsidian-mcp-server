@@ -1,0 +1,23 @@
+{
+  "github.copilot.chat.agent.thinkingTool": true,
+  "github.copilot.nextEditSuggestions.enabled": true,
+  "github.copilot.chat.commitMessageGeneration.instructions": [
+    {
+      "text": "必ず日本語で簡潔に記述してください"
+    }
+  ],
+  "github.copilot.chat.pullRequestDescriptionGeneration.instructions": [
+    {
+      "text": "必ず日本語で簡潔に記述してください"
+    }
+  ],
+  "chat.instructionsFilesLocations": {
+    ".github/instructions": true
+  },
+  "chat.promptFilesLocations": {
+    ".github/prompts/ask": true,
+    ".github/prompts/edit": true,
+    ".github/prompts/agent": true,
+    ".github/prompts/vibe": true
+  },
+}
