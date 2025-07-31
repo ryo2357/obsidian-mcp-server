@@ -10,3 +10,4 @@ test-scripts/test_tool_call.json
 
 # 設定ファイル（環境固有）
 obsidian-vault-mcp.toml
+.config/
