@@ -6,21 +6,26 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     /// Obsidian vault のパス
-    pub vault_path: PathBuf,
+    pub vault_path: Option<PathBuf>,
 }
 
 impl Default for Config {
     fn default() -> Self {
         Self {
-            vault_path: dirs::home_dir()
-                .unwrap_or_else(|| PathBuf::from("."))
-                .join("Documents")
-                .join("vault"),
+            vault_path: Some(PathBuf::from("./vault")),
         }
     }
 }
 
+
+
 impl Config {
+    /// vault_pathを取得（Noneの場合はエラー）
+    pub fn get_vault_path(&self) -> Result<&PathBuf> {
+        self.vault_path.as_ref()
+            .with_context(|| "Vault path is not configured. Please set vault_path in config file.")
+    }
+
     /// 設定ファイルのデフォルトパスを取得
     pub fn default_config_path() -> PathBuf {
         if let Some(config_dir) = dirs::config_dir() {

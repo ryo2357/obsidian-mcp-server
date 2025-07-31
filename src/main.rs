@@ -5,7 +5,7 @@ mod mcp;
 use clap::Parser;
 use config::Config;
 use error::AppResult;
-use mcp::McpServer;
+use mcp::server::McpServer;
 use std::path::PathBuf;
 
 /// Obsidian MCP サーバー
@@ -40,7 +40,7 @@ async fn main() -> AppResult<()> {
 
     // コマンドライン引数で vault_path を上書き
     if let Some(vault_path) = cli.vault_path {
-        config.vault_path = vault_path;
+        config.vault_path = Some(vault_path);
     }
 
     // MCP サーバーを作成・起動

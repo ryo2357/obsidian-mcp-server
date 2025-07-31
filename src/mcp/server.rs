@@ -1,8 +1,7 @@
 use crate::config::Config;
 use crate::error::{AppResult, McpError};
-use crate::mcp::protocol::*;
+use crate::mcp::protocol::{JsonRpcRequest, JsonRpcResponse, InitializeParams, InitializeResult, ServerInfo, ProtocolVersion, ServerCapabilities, ToolsCapability, ListToolsResult};
 use anyhow::Context;
-use serde_json::Value;
 use std::io::{BufRead, BufReader, Write};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader as AsyncBufReader};
 
