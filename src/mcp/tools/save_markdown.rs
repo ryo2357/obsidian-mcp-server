@@ -44,8 +44,9 @@ pub fn execute_save_markdown_file(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::execute_save_markdown_file;
     use crate::vault::VaultOperations;
+    use anyhow::Result;
     use serde_json::json;
     use std::fs;
     use tempfile::TempDir;

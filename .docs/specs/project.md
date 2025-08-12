@@ -1,12 +1,42 @@
 # Obsidian MCP Server プロジェクト仕様書
 
 作成日時: 2025-07-31 12:00
-更新日時: 2025-07-31 16:00
+更新日時: 2025-08-12 17:30
 
 ## プロジェクト概要
 
 Obsidian Vault を操作するための Model Context Protocol (MCP) サーバーの実装。
 Rust で記述され、JSON-RPC 2.0 プロトコルを使用してクライアントとの通信を行う。
+
+## コマンドライン引数
+
+```rust
+#[derive(Parser)]
+struct Cli {
+    /// 設定ファイルのパス
+    #[arg(short, long)]
+    config: Option<PathBuf>,
+
+    /// Obsidian vault のパス
+    #[arg(short, long)]
+    vault_path: Option<PathBuf>,
+
+    /// 同期モードで実行（テスト用）
+    #[arg(long)]
+    sync: bool,
+
+    /// デバッグモードで実行
+    #[arg(long)]
+    debug: bool,
+}
+```
+
+利用可能なオプション:
+
+- `-c, --config <CONFIG>`: 設定ファイルのパス
+- `-v, --vault-path <VAULT_PATH>`: Obsidian vault のパス
+- `--sync`: 同期モードで実行（テスト用）
+- `--debug`: デバッグモードで実行（debug-vault/ を自動使用）
 
 ## プロジェクト構造
 
@@ -14,6 +44,7 @@ Rust で記述され、JSON-RPC 2.0 プロトコルを使用してクライア�
 src/
 ├── main.rs              # エントリーポイント
 ├── config.rs            # 設定管理
+├── debug.rs             # デバッグ機能
 ├── error.rs             # エラーハンドリング
 ├── vault/               # Vault操作モジュール
 │   ├── mod.rs
@@ -25,6 +56,18 @@ src/
     └── tools/           # MCPツール実装
         ├── mod.rs
         └── save_markdown.rs # Markdownファイル保存ツール
+
+test-scripts/            # テスト関連ファイル
+├── test_mcp.bat         # 通常モードのテストスクリプト
+├── test_mcp_root.bat    # ルートから移動したテストスクリプト
+├── test_debug.bat       # デバッグモードのテストスクリプト
+├── test_initialize.json # 初期化テスト用JSONファイル
+├── test_list_tools.json # ツール一覧テスト用JSONファイル
+└── test_save_markdown.json # Markdown保存テスト用JSONファイル
+
+debug-vault/             # デバッグモード用vault（自動生成）
+└── Tips/
+    └── sample-note.md   # デバッグ用サンプルファイル
 ```
 
 ## データ構造
@@ -164,6 +207,31 @@ pub struct McpError {
 }
 ```
 
+### Debug Module (src/debug.rs)
+
+デバッグ機能を提供するモジュール。
+
+```rust
+pub struct DebugConfig {
+    pub vault_path: PathBuf,
+    pub enabled: bool,
+}
+```
+
+主要メソッド:
+
+- `new()` - デバッグ設定を作成（vault_path: `./debug-vault`）
+- `ensure_debug_vault()` - デバッグ用 vault ディレクトリを作成
+- `generate_dummy_data()` - デバッグ用のサンプルデータを生成
+- `debug_log(message: &str)` - デバッグ用ログを出力
+
+機能:
+
+- `--debug` フラグによるデバッグモードの切り替え
+- ハードコードされたデバッグ vault パス（`./debug-vault/`）
+- デバッグ用ディレクトリの自動作成
+- サンプル Markdown ファイルの自動生成
+
 ## コーディング規約
 
 ### インポート規約
@@ -182,6 +250,12 @@ pub struct McpError {
 - セキュリティを重視し、vault 外へのアクセスを制限する
 - ファイル名の検証を必ず実行する
 
+### テストスクリプト管理規約
+
+- 全てのテスト用 bat スクリプトは `test-scripts/` フォルダに保存する
+- JSON テストファイルも同様に `test-scripts/` フォルダに保存する
+- デバッグモード用とリリースモード用でスクリプトを分離する
+
 ## 依存関係
 
 主要な依存関係:
@@ -192,6 +266,7 @@ pub struct McpError {
 - `toml` - 設定ファイル解析
 - `dirs` - システムディレクトリ取得
 - `clap` - コマンドライン解析
+- `chrono` - 日時処理（デバッグモード用）
 
 開発時依存関係:
 
@@ -205,6 +280,21 @@ pub struct McpError {
 - Vault 内の`Tips`ディレクトリにファイルを保存
 - セキュリティチェック、ファイル名検証、重複チェックを実装
 - テスト済み、動作確認完了
+
+### デバッグ機能
+
+- `--debug` フラグによるデバッグモードの実装
+- 固定パス（`./debug-vault/`）でのデバッグ環境自動構築
+- サンプル Markdown ファイルの自動生成
+- デバッグ用ログ出力機能
+- テスト済み、動作確認完了
+
+### コードリファクタリング
+
+- ワイルドカードインポート（`use *`）の除去
+- 明示的なインポートへの変更
+- コードの可読性向上
+- テスト実行済み、正常動作確認完了
 
 ## 今後の拡張予定
 

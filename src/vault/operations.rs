@@ -131,7 +131,8 @@ impl VaultOperations {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::VaultOperations;
+    use anyhow::Result;
     use std::fs;
     use tempfile::TempDir;
 
