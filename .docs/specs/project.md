@@ -1,7 +1,7 @@
 # Obsidian MCP Server プロジェクト仕様書
 
 作成日時: 2025-07-31 12:00
-更新日時: 2025-08-12 17:30
+更新日時: 2025-08-14 12:00
 
 ## プロジェクト概要
 
@@ -79,7 +79,7 @@ debug-vault/             # デバッグモード用vault（自動生成）
 ```rust
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Config {
-    pub vault_path: Option<PathBuf>,
+    vault_path: Option<PathBuf>,  // プライベートフィールド
 }
 ```
 
@@ -87,7 +87,8 @@ pub struct Config {
 
 - `default()` - デフォルト設定を生成（vault_path: `None`）
 - `get_vault_path()` - vault_path を取得（None の場合はエラー）
-- `load_or_default()` - 設定ファイルから読み込み、存在しない場合はデフォルト値を使用
+- `set_vault_path<P: AsRef<Path>>(&mut self, path: P)` - vault_path を設定
+- `load_or_default(config_path: Option<&Path>)` - 設定ファイルから読み込み、設定パスを指定可能
 - `save_to_file()` - 設定をファイルに保存
 - `load_from_file()` - 設定ファイルから読み込み
 
@@ -95,6 +96,12 @@ pub struct Config {
 
 - Windows: `%APPDATA%\obsidian-mcp-server\config.toml`
 - その他: `~/.config/obsidian-mcp-server/config.toml`
+- デバッグモード時: `./config/config.toml`
+
+設計変更:
+
+- `vault_path`フィールドをプライベートに変更し、セッターメソッド経由でのアクセスを強制
+- `load_or_default`メソッドに設定ファイルパスの指定機能を追加
 
 注意: デフォルト設定では `vault_path` は `None` のため、コマンドライン引数での指定が必須です。
 
@@ -214,23 +221,28 @@ pub struct McpError {
 ```rust
 pub struct DebugConfig {
     pub vault_path: PathBuf,
-    pub enabled: bool,
+    pub config_path: PathBuf,
 }
 ```
 
 主要メソッド:
 
-- `new()` - デバッグ設定を作成（vault_path: `./debug-vault`）
+- `new()` - デバッグ設定を作成（vault_path: `./debug-vault`, config_path: `./config/config.toml`）
 - `ensure_debug_vault()` - デバッグ用 vault ディレクトリを作成
 - `generate_dummy_data()` - デバッグ用のサンプルデータを生成
-- `debug_log(message: &str)` - デバッグ用ログを出力
 
 機能:
 
 - `--debug` フラグによるデバッグモードの切り替え
 - ハードコードされたデバッグ vault パス（`./debug-vault/`）
+- 専用設定ファイルパス（`./config/config.toml`）の管理
 - デバッグ用ディレクトリの自動作成
 - サンプル Markdown ファイルの自動生成
+
+設計変更:
+
+- `enabled`フィールドを削除し、`config_path`フィールドを追加
+- デバッグ用ログ出力機能を削除してシンプル化
 
 ## コーディング規約
 
@@ -243,6 +255,8 @@ pub struct DebugConfig {
 
 - `vault_path`が None の場合は、適切なエラーメッセージでエラーを発生させる
 - デフォルト設定では`vault_path`は`None`で、コマンドライン引数での指定が必須
+- `vault_path`フィールドはプライベートとし、セッターメソッド経由でのアクセスを強制する
+- 設定ファイルパスの指定は`load_or_default`メソッドのパラメータで行う
 
 ### ツール実装規約
 
@@ -294,6 +308,16 @@ pub struct DebugConfig {
 - ワイルドカードインポート（`use *`）の除去
 - 明示的なインポートへの変更
 - コードの可読性向上
+- テスト実行済み、正常動作確認完了
+
+### 設定管理リファクタリング
+
+- `Config`構造体の`vault_path`フィールドをプライベート化
+- `set_vault_path`メソッドの追加による設定アクセスの制御
+- `load_or_default`メソッドのオプション設定パス機能
+- `DebugConfig`の`config_path`フィールド追加
+- デバッグモードと通常モードの統合処理
+- コードの可読性向上とメンテナビリティの改善
 - テスト実行済み、正常動作確認完了
 
 ## 今後の拡張予定
