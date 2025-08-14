@@ -2,36 +2,26 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
+
 /// アプリケーション設定
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Config {
     /// Obsidian vault のパス
-    vault_path: Option<PathBuf>,
+    vault_dir: Option<PathBuf>,
 }
 
 
 
 impl Config {
-    /// vault_pathを取得（Noneの場合はエラー）
-    pub fn get_vault_path(&self) -> Result<&PathBuf> {
-        self.vault_path.as_ref()
-            .with_context(|| "Vault path is not configured. Please set vault_path in config file.")
+    /// vault_dirを取得（Noneの場合はエラー）
+    pub fn get_vault_dir(&self) -> Result<&PathBuf> {
+        self.vault_dir.as_ref()
+            .with_context(|| "Vault path is not configured. Please set vault_dir in config file.")
     }
 
     
-    pub fn set_vault_path<P: AsRef<Path>>(&mut self, path: P) {
-        self.vault_path = Some(path.as_ref().to_path_buf());
-    }
-
-    /// 設定ファイルのデフォルトパスを取得
-    pub fn default_config_path() -> PathBuf {
-        if let Some(config_dir) = dirs::config_dir() {
-            config_dir
-                .join("obsidian-mcp-server")
-                .join("config.toml")
-        } else {
-            PathBuf::from("config.toml")
-        }
+    pub fn set_vault_dir<P: AsRef<Path>>(&mut self, path: P) {
+        self.vault_dir = Some(path.as_ref().to_path_buf());
     }
 
     /// 設定ファイルを読み込み
@@ -62,16 +52,14 @@ impl Config {
     }
 
     /// 設定を読み込み、ファイルが存在しない場合はデフォルト値を使用
-    pub fn load_or_default(config_path: Option<&Path>) -> Result<Self> {
-        let binding = Self::default_config_path();
-        let config_path = config_path.unwrap_or(&binding);
+    pub fn load_or_default(config_path: PathBuf) -> Result<Self> {
 
         if config_path.exists() {
-            Self::load_from_file(&config_path)
+            Self::load_from_file(config_path)
         } else {
             let config = Self::default();
             // デフォルト設定を保存
-            if let Err(e) = config.save_to_file(&config_path) {
+            if let Err(e) = config.save_to_file(config_path) {
                 eprintln!("Warning: Failed to save default config: {}", e);
             }
             Ok(config)

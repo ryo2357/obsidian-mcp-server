@@ -18,10 +18,10 @@ pub struct McpServer {
 impl McpServer {
     /// 新しい MCP サーバーを作成
     pub fn new(config: Config) -> Self {
-        // VaultOperationsを初期化（vault_pathが設定されている場合のみ）
-        let vault_ops = if let Ok(vault_path) = config.get_vault_path() {
+        // VaultOperationsを初期化（vault_dirが設定されている場合のみ）
+        let vault_ops = if let Ok(vault_dir) = config.get_vault_dir() {
             Some(VaultOperations::new(
-                vault_path.clone(),
+                vault_dir.clone(),
                 TARGET_DIRECTORY.to_string(),
             ))
         } else {

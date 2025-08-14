@@ -3,6 +3,7 @@ mod debug;
 mod error;
 mod mcp;
 mod vault;
+mod logger;
 
 use clap::Parser;
 use config::Config;
@@ -10,6 +11,17 @@ use debug::DebugConfig;
 use error::AppResult;
 use mcp::server::McpServer;
 use std::path::PathBuf;
+use once_cell::sync::Lazy;
+use log::{debug};
+
+pub static APP_DIR: Lazy<PathBuf>  = Lazy::new(|| 
+  if let Some(config_dir) = dirs::config_dir() {
+    config_dir
+      .join("obsidian-mcp-server")
+    } else {
+      PathBuf::from("./.config")
+});
+
 
 /// Obsidian MCP サーバー
 #[derive(Parser)]
@@ -23,7 +35,7 @@ struct Cli {
 
     /// Obsidian vault のパス
     #[arg(short, long)]
-    vault_path: Option<PathBuf>,
+    vault_dir: Option<PathBuf>,
 
     /// 同期モードで実行（テスト用）
     #[arg(long)]
@@ -40,27 +52,37 @@ async fn main() -> AppResult<()> {
 
     let config = match cli.debug {
         true =>{
-          println!("Starting in debug mode...");
-          let debug_config = DebugConfig::new();
 
+          let debug_config = DebugConfig::new();
+          // デバッグモードでロガーを初期化
+          logger::init_logger("debug", debug_config.config_dir.clone())?;
+          
+          debug!("Starting in debug mode...");
           // デバッグ用の vault とダミーデータを作成
           debug_config.ensure_debug_vault()?;
           debug_config.generate_dummy_data()?;
-          println!("Debug environment initialized");
+          debug!("Debug environment initialized");
 
-          let mut config = Config::load_or_default(Some(&debug_config.config_path))?;
-          config.set_vault_path(debug_config.vault_path.clone());
+          let mut config = Config::load_or_default(debug_config.config_path.clone())?;
+          config.set_vault_dir(debug_config.vault_dir.clone());
 
           config
 
         },
         false => {
-          // 通常モードの設定を読み込み
-          let mut config = Config::load_or_default(cli.config.as_deref())?;
+          // 通常モードでロガーを初期化
+          logger::init_logger("info", APP_DIR.join("logs"))?;
 
-          // コマンドライン引数で vault_path を上書き
-          if let Some(vault_path) = cli.vault_path {
-              config.set_vault_path(vault_path);
+          // 通常モードの設定を読み込み
+          let config_path = match cli.config {
+              Some(path) => path,
+              None => APP_DIR.join("config.toml"),
+          };
+          let mut config = Config::load_or_default(config_path)?;
+
+          // コマンドライン引数で vault_dir を上書き
+          if let Some(vault_dir) = cli.vault_dir {
+              config.set_vault_dir(vault_dir);
           }
           config
           

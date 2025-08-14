@@ -6,8 +6,9 @@ use std::path::PathBuf;
 #[derive(Debug, Clone)]
 pub struct DebugConfig {
     /// デバッグ用 vault のパス（固定）
-    pub vault_path: PathBuf,
+    pub vault_dir: PathBuf,
     pub config_path: PathBuf,
+    pub config_dir: PathBuf,
 
 }
 
@@ -15,22 +16,23 @@ impl DebugConfig {
     /// デバッグ設定を作成
     pub fn new() -> Self {
         Self {
-            vault_path: PathBuf::from("./debug-vault"),
-            config_path: PathBuf::from("./config/config.toml"),
+            vault_dir: PathBuf::from("./debug-vault"),
+            config_path: PathBuf::from("./.config/config.toml"),
+            config_dir: PathBuf::from("./.config/logs"),
         }
     }
 
     /// デバッグ用 vault ディレクトリを作成
     pub fn ensure_debug_vault(&self) -> Result<()> {
-        if !self.vault_path.exists() {
-            fs::create_dir_all(&self.vault_path)
-                .with_context(|| format!("Failed to create debug vault directory: {}", self.vault_path.display()))?;
+        if !self.vault_dir.exists() {
+            fs::create_dir_all(&self.vault_dir)
+                .with_context(|| format!("Failed to create debug vault directory: {}", self.vault_dir.display()))?;
             
-            println!("Created debug vault directory: {}", self.vault_path.display());
+            println!("Created debug vault directory: {}", self.vault_dir.display());
         }
 
         // ターゲットディレクトリも作成
-        let target_dir = self.vault_path.join("Tips");
+        let target_dir = self.vault_dir.join("Tips");
         if !target_dir.exists() {
             fs::create_dir_all(&target_dir)
                 .with_context(|| format!("Failed to create debug target directory: {}", target_dir.display()))?;
@@ -43,7 +45,7 @@ impl DebugConfig {
 
     /// デバッグ用ダミーデータを生成
     pub fn generate_dummy_data(&self) -> Result<()> {
-        let sample_file = self.vault_path.join("Tips").join("sample-note.md");
+        let sample_file = self.vault_dir.join("Tips").join("sample-note.md");
         
         if !sample_file.exists() {
             let sample_content = r#"# サンプルノート
@@ -117,21 +119,21 @@ mod tests {
     #[test]
     fn test_debug_config_creation() {
         let config = DebugConfig::new();
-        assert_eq!(config.vault_path, PathBuf::from("./debug-vault"));
+        assert_eq!(config.vault_dir, PathBuf::from("./debug-vault"));
     }
 
     #[test]
     fn test_ensure_debug_vault() -> Result<()> {
         let temp_dir = TempDir::new()?;
-        let vault_path = temp_dir.path().join("test-debug-vault");
+        let vault_dir = temp_dir.path().join("test-debug-vault");
         
         let mut config = DebugConfig::new();
-        config.vault_path = vault_path.clone();
+        config.vault_dir = vault_dir.clone();
         
         config.ensure_debug_vault()?;
         
-        assert!(vault_path.exists());
-        assert!(vault_path.join("Tips").exists());
+        assert!(vault_dir.exists());
+        assert!(vault_dir.join("Tips").exists());
         
         Ok(())
     }
@@ -139,15 +141,15 @@ mod tests {
     #[test]
     fn test_generate_dummy_data() -> Result<()> {
         let temp_dir = TempDir::new()?;
-        let vault_path = temp_dir.path().join("test-debug-vault");
+        let vault_dir = temp_dir.path().join("test-debug-vault");
         
         let mut config = DebugConfig::new();
-        config.vault_path = vault_path.clone();
+        config.vault_dir = vault_dir.clone();
         
         config.ensure_debug_vault()?;
         config.generate_dummy_data()?;
         
-        let sample_file = vault_path.join("Tips").join("sample-note.md");
+        let sample_file = vault_dir.join("Tips").join("sample-note.md");
         assert!(sample_file.exists());
         
         let content = fs::read_to_string(&sample_file)?;
