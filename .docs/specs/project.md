@@ -1,7 +1,7 @@
 # Obsidian MCP Server プロジェクト仕様書
 
 作成日時: 2025-07-31 12:00
-更新日時: 2025-08-14 12:00
+更新日時: 2025-08-14 15:25
 
 ## プロジェクト概要
 
@@ -19,7 +19,7 @@ struct Cli {
 
     /// Obsidian vault のパス
     #[arg(short, long)]
-    vault_path: Option<PathBuf>,
+    vault_dir: Option<PathBuf>,
 
     /// 同期モードで実行（テスト用）
     #[arg(long)]
@@ -34,7 +34,7 @@ struct Cli {
 利用可能なオプション:
 
 - `-c, --config <CONFIG>`: 設定ファイルのパス
-- `-v, --vault-path <VAULT_PATH>`: Obsidian vault のパス
+- `-v, --vault-dir <VAULT_DIR>`: Obsidian vault のパス
 - `--sync`: 同期モードで実行（テスト用）
 - `--debug`: デバッグモードで実行（debug-vault/ を自動使用）
 
@@ -45,6 +45,7 @@ src/
 ├── main.rs              # エントリーポイント
 ├── config.rs            # 設定管理
 ├── debug.rs             # デバッグ機能
+├── logger.rs            # ログ初期化/設定
 ├── error.rs             # エラーハンドリング
 ├── vault/               # Vault操作モジュール
 │   ├── mod.rs
@@ -79,31 +80,22 @@ debug-vault/             # デバッグモード用vault（自動生成）
 ```rust
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Config {
-    vault_path: Option<PathBuf>,  // プライベートフィールド
+    vault_dir: Option<PathBuf>, // プライベートフィールド
 }
 ```
 
 主要メソッド:
 
-- `default()` - デフォルト設定を生成（vault_path: `None`）
-- `get_vault_path()` - vault_path を取得（None の場合はエラー）
-- `set_vault_path<P: AsRef<Path>>(&mut self, path: P)` - vault_path を設定
-- `load_or_default(config_path: Option<&Path>)` - 設定ファイルから読み込み、設定パスを指定可能
-- `save_to_file()` - 設定をファイルに保存
-- `load_from_file()` - 設定ファイルから読み込み
+- `get_vault_dir()` - vault_dir を取得（None の場合はエラー）
+- `set_vault_dir<P: AsRef<Path>>(&mut self, path: P)` - vault_dir を設定
+- `load_or_default(config_path: PathBuf)` - 設定ファイルから読み込み。存在しない場合はデフォルト生成し保存
+- `save_to_file(path: &Path)` / `load_from_file(path: PathBuf)` - 永続化/読み込み
 
-設定ファイルパス:
+設計変更 (旧仕様との差分):
 
-- Windows: `%APPDATA%\obsidian-mcp-server\config.toml`
-- その他: `~/.config/obsidian-mcp-server/config.toml`
-- デバッグモード時: `./config/config.toml`
-
-設計変更:
-
-- `vault_path`フィールドをプライベートに変更し、セッターメソッド経由でのアクセスを強制
-- `load_or_default`メソッドに設定ファイルパスの指定機能を追加
-
-注意: デフォルト設定では `vault_path` は `None` のため、コマンドライン引数での指定が必須です。
+- フィールド名 `vault_path` → `vault_dir` にリネーム（整合性向上）
+- `default_config_path()` を削除し、呼び出し元で明示パス決定
+- `load_or_default` の引数を `Option<&Path>` から `PathBuf` に変更し責務を単純化
 
 ### MCP Protocol (src/mcp/protocol.rs)
 
@@ -216,33 +208,52 @@ pub struct McpError {
 
 ### Debug Module (src/debug.rs)
 
-デバッグ機能を提供するモジュール。
+デバッグ実行時の補助機能を提供するモジュール。
 
 ```rust
 pub struct DebugConfig {
-    pub vault_path: PathBuf,
+    pub vault_dir: PathBuf,
     pub config_path: PathBuf,
+    pub config_dir: PathBuf,
 }
 ```
 
 主要メソッド:
 
-- `new()` - デバッグ設定を作成（vault_path: `./debug-vault`, config_path: `./config/config.toml`）
-- `ensure_debug_vault()` - デバッグ用 vault ディレクトリを作成
-- `generate_dummy_data()` - デバッグ用のサンプルデータを生成
+- `new()` - デフォルト値を設定
+- `ensure_debug_vault()` - デバッグ用 vault とサブディレクトリ (`Tips`) を作成
+- `generate_dummy_data()` - サンプル Markdown を生成
+
+変更点:
+
+- フィールド `vault_path` → `vault_dir` に追随リネーム
+- ログ出力用 `config_dir` フィールドを追加（`.config/logs`）
+- 標準出力へのデバッグログ依存を削減（ファイルロギングへ移行）
+
+### Logging (src/logger.rs)
+
+`flexi_logger` を用いたファイルベースのロギング初期化。
 
 機能:
 
-- `--debug` フラグによるデバッグモードの切り替え
-- ハードコードされたデバッグ vault パス（`./debug-vault/`）
-- 専用設定ファイルパス（`./config/config.toml`）の管理
-- デバッグ用ディレクトリの自動作成
-- サンプル Markdown ファイルの自動生成
+- ログレベル（`debug` / `info` 等）を文字列指定で初期化
+- ログ出力先: 実行モードに応じた設定ディレクトリ配下 `logs/`
+  - 通常モード: OS 毎の設定ルート（`dirs::config_dir()/obsidian-mcp-server/logs`）
+  - デバッグモード: プロジェクトルート直下の `.config/logs/`
+- ログファイル命名: `log-<timestamp>.log`
+- ローテーション: サイズ基準 10MB (`Criterion::Size(10 * 1024 * 1024)`)
+- 保持ポリシー: 最新 5 ファイル (`Cleanup::KeepLogFiles(5)`)
+- フォーマット: `flexi_logger::detailed_format`
 
-設計変更:
+初期化フロー:
 
-- `enabled`フィールドを削除し、`config_path`フィールドを追加
-- デバッグ用ログ出力機能を削除してシンプル化
+- `main.rs` 起動時にモード判定 → `logger::init_logger(level, path)` 呼び出し
+- 以降 `log` クレートのマクロ（`debug!` 等）で記録
+
+設計意図:
+
+- 標準入出力は MCP プロトコル通信占有のため混在回避
+- ファイルロギングでデバッグと運用の両立
 
 ## コーディング規約
 
@@ -280,13 +291,23 @@ pub struct DebugConfig {
 - `toml` - 設定ファイル解析
 - `dirs` - システムディレクトリ取得
 - `clap` - コマンドライン解析
-- `chrono` - 日時処理（デバッグモード用）
+- `chrono` - 日時処理（デバッグ用データ生成）
+- `flexi_logger` - ファイルロギング & ローテーション
+- `log` - ロギングファサード
+- `once_cell` - グローバル遅延初期化 (`APP_DIR`)
 
 開発時依存関係:
 
 - `tempfile` - テスト用一時ファイル作成
 
 ## 実装済み機能
+
+### ログ出力機能（新規）
+
+- `flexi_logger` によるファイルベースログ
+- デバッグ/通常モードで異なる出力先ディレクトリ
+- サイズローテーション & 保持数制御
+- 標準入出力混在を回避し通信チャネルを保全
 
 ### Markdown ファイル保存機能
 
@@ -297,11 +318,10 @@ pub struct DebugConfig {
 
 ### デバッグ機能
 
-- `--debug` フラグによるデバッグモードの実装
+- `--debug` フラグによるデバッグモード
 - 固定パス（`./debug-vault/`）でのデバッグ環境自動構築
 - サンプル Markdown ファイルの自動生成
-- デバッグ用ログ出力機能
-- テスト済み、動作確認完了
+- ファイルロギング（標準出力依存から移行）
 
 ### コードリファクタリング
 
