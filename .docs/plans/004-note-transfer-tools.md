@@ -87,7 +87,7 @@ Copilot 側フロー:
 
 get_template_markdown:
 
-```
+```json
 {
   "type": "object",
   "properties": {},
@@ -97,11 +97,14 @@ get_template_markdown:
 
 list_note_tags:
 
-```
+```json
 {
   "type": "object",
   "properties": {
-    "filter": {"type": "string", "description": "Optional substring to filter tags (future use)"}
+    "filter": {
+      "type": "string",
+      "description": "Optional substring to filter tags (future use)"
+    }
   },
   "required": []
 }
@@ -146,29 +149,17 @@ list_note_tags:
 テンプレ取得 → 編集 → 保存の流れを誘導するためのプロンプト例。
 
 1. テンプレ取得
-
-```
-MCP ツール get_template_markdown を実行しテンプレート本文を取得してください。テンプレートが無い場合は Empty template と出力してください。
-```
+   MCP ツール get_template_markdown を実行しテンプレート本文を取得してください。テンプレートが無い場合は Empty template と出力してください。
 
 2. タグ候補取得と選定
-
-```
-MCP ツール list_note_tags を実行し取得した tags から下記本文に最も関連するタグ上位 3 件を選び YAML front matter 用配列にしてください。本文: <ここに本文>
-```
+   MCP ツール list_note_tags を実行し取得した tags から下記本文に最も関連するタグ上位 3 件を選び YAML front matter 用配列にしてください。本文: <ここに本文>
 
 3. テンプレート適用
-
-```
-以下テンプレートに日時と選定タグを挿入し完成した Markdown を出力。必要ならタイトルを推測。テンプレート:
-<取得したテンプレート>
-```
+   以下テンプレートに日時と選定タグを挿入し完成した Markdown を出力。必要ならタイトルを推測。テンプレート:
+   <取得したテンプレート>
 
 4. 保存
-
-```
-完成テキストを基に安全なファイル名 (日付-短い英語スラッグ) を決め、拡張子抜き filename と content を save_markdown_file に渡す JSON を生成してください。
-```
+   完成テキストを基に安全なファイル名 (日付-短い英語スラッグ) を決め、拡張子抜き filename と content を save_markdown_file に渡す JSON を生成してください。
 
 ## 分割の要否
 
