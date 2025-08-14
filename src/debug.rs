@@ -7,8 +7,8 @@ use std::path::PathBuf;
 pub struct DebugConfig {
     /// デバッグ用 vault のパス（固定）
     pub vault_path: PathBuf,
-    /// デバッグモードが有効かどうか
-    pub enabled: bool,
+    pub config_path: PathBuf,
+
 }
 
 impl DebugConfig {
@@ -16,7 +16,7 @@ impl DebugConfig {
     pub fn new() -> Self {
         Self {
             vault_path: PathBuf::from("./debug-vault"),
-            enabled: true,
+            config_path: PathBuf::from("./config/config.toml"),
         }
     }
 
@@ -100,12 +100,7 @@ fn main() {
         Ok(())
     }
 
-    /// デバッグ用ログを出力
-    pub fn debug_log(&self, message: &str) {
-        if self.enabled {
-            println!("[DEBUG] {}", message);
-        }
-    }
+
 }
 
 impl Default for DebugConfig {
@@ -123,7 +118,6 @@ mod tests {
     fn test_debug_config_creation() {
         let config = DebugConfig::new();
         assert_eq!(config.vault_path, PathBuf::from("./debug-vault"));
-        assert!(config.enabled);
     }
 
     #[test]

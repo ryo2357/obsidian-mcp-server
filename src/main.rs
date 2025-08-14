@@ -38,41 +38,35 @@ struct Cli {
 async fn main() -> AppResult<()> {
     let cli = Cli::parse();
 
-    // デバッグモードの処理
-    if cli.debug {
-        println!("Starting in debug mode...");
-        let debug_config = DebugConfig::new();
-        debug_config.ensure_debug_vault()?;
-        debug_config.generate_dummy_data()?;
-        debug_config.debug_log("Debug environment initialized");
+    let config = match cli.debug {
+        true =>{
+          println!("Starting in debug mode...");
+          let debug_config = DebugConfig::new();
 
-        // デバッグモード用の設定を作成
-        let config = Config {
-            vault_path: Some(debug_config.vault_path),
-        };
+          // デバッグ用の vault とダミーデータを作成
+          debug_config.ensure_debug_vault()?;
+          debug_config.generate_dummy_data()?;
+          println!("Debug environment initialized");
 
-        let mut server = McpServer::new(config);
+          let mut config = Config::load_or_default(Some(&debug_config.config_path))?;
+          config.set_vault_path(debug_config.vault_path.clone());
 
-        if cli.sync {
-            server.run_sync()?;
-        } else {
-            server.run_async().await?;
-        }
+          config
 
-        return Ok(());
-    }
+        },
+        false => {
+          // 通常モードの設定を読み込み
+          let mut config = Config::load_or_default(cli.config.as_deref())?;
 
-    // 通常モードの処理
-    let mut config = if let Some(config_path) = cli.config {
-        Config::load_from_file(config_path)?
-    } else {
-        Config::load_or_default()?
+          // コマンドライン引数で vault_path を上書き
+          if let Some(vault_path) = cli.vault_path {
+              config.set_vault_path(vault_path);
+          }
+          config
+          
+        },
+        
     };
-
-    // コマンドライン引数で vault_path を上書き
-    if let Some(vault_path) = cli.vault_path {
-        config.vault_path = Some(vault_path);
-    }
 
     // MCP サーバーを作成・起動
     let mut server = McpServer::new(config);

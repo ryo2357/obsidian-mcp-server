@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Config {
     /// Obsidian vault のパス
-    pub vault_path: Option<PathBuf>,
+    vault_path: Option<PathBuf>,
 }
 
 
@@ -16,6 +16,11 @@ impl Config {
     pub fn get_vault_path(&self) -> Result<&PathBuf> {
         self.vault_path.as_ref()
             .with_context(|| "Vault path is not configured. Please set vault_path in config file.")
+    }
+
+    
+    pub fn set_vault_path<P: AsRef<Path>>(&mut self, path: P) {
+        self.vault_path = Some(path.as_ref().to_path_buf());
     }
 
     /// 設定ファイルのデフォルトパスを取得
@@ -57,9 +62,10 @@ impl Config {
     }
 
     /// 設定を読み込み、ファイルが存在しない場合はデフォルト値を使用
-    pub fn load_or_default() -> Result<Self> {
-        let config_path = Self::default_config_path();
-        
+    pub fn load_or_default(config_path: Option<&Path>) -> Result<Self> {
+        let binding = Self::default_config_path();
+        let config_path = config_path.unwrap_or(&binding);
+
         if config_path.exists() {
             Self::load_from_file(&config_path)
         } else {
