@@ -4,7 +4,7 @@ description: 'gitでステージングされた実装の仕様書更新と報告
 ---
 
 - このプロンプトはスラッシュコマンドで呼び出されます。
-- 昨日の実装が完了した後に呼び出されます。
+- 直前のコミットの実装が完了した後に呼び出されます。
 - 実装内容に関してはgitのコマンドにて確認します
 - 実装内容をもとに、仕様書の更新と実装報告書の作成を行います。
 
@@ -15,8 +15,9 @@ description: 'gitでステージングされた実装の仕様書更新と報告
 ### フェーズ 1: ターミナルで変更内容を確認
 
 ```bash
-git diff --cached
-git status --porcelain
+git show --name-status HEAD
+git show --stat HEAD
+git diff HEAD~1 HEAD
 ```
 
 ### フェーズ 2: 変更内容を解析
