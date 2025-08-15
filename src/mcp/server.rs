@@ -1,7 +1,7 @@
 use crate::config::Config;
 use crate::error::{AppResult, McpError};
 use crate::mcp::protocol::{JsonRpcRequest, JsonRpcResponse, InitializeParams, InitializeResult, ServerInfo, ProtocolVersion, ServerCapabilities, ToolsCapability, ListToolsResult, Tool, CallToolParams, CallToolResult, ToolContent};
-use crate::mcp::tools::{execute_save_markdown_file, TARGET_DIRECTORY};
+use crate::mcp::tools::{execute_save_markdown_file, TARGET_DIRECTORY, execute_get_template_markdown, execute_list_note_tags};
 use crate::vault::VaultOperations;
 use anyhow::Context;
 use serde_json::{json, Value};
@@ -182,6 +182,18 @@ impl McpServer {
                     "required": ["filename", "content"]
                 }),
             });
+            tools.push(Tool { // get_template_markdown
+                name: "get_template_markdown".to_string(),
+                description: "Return configured markdown template content".to_string(),
+                input_schema: json!({"type":"object","properties":{},"required":[]}),
+
+            });
+            tools.push(Tool { // list_note_tags
+                name: "list_note_tags".to_string(),
+                description: "Return configured tag candidates for note classification".to_string(),
+                input_schema: json!({"type":"object","properties":{"filter":{"type":"string","description":"Optional substring to filter tags (future use)"}},"required":[]}),
+
+            });
         }
 
         let result = ListToolsResult { tools };
@@ -214,6 +226,8 @@ impl McpServer {
         // ツールを実行
         let result = match params.name.as_str() {
             "save_markdown_file" => self.execute_save_markdown_file(params.arguments),
+            "get_template_markdown" => self.execute_get_template_markdown(params.arguments),
+            "list_note_tags" => self.execute_list_note_tags(params.arguments),
             _ => {
                 let error = McpError::method_not_found(&format!("Tool not found: {}", params.name));
                 return JsonRpcResponse::error(request.id.clone(), error);
@@ -255,6 +269,25 @@ impl McpServer {
             .ok_or_else(|| anyhow::anyhow!("Missing arguments"))?;
 
         let result = execute_save_markdown_file(vault_ops, args)?;
+        Ok(serde_json::to_string_pretty(&result)?)
+    }
+
+    /// get_template_markdown ツールを実行
+    fn execute_get_template_markdown(&self, arguments: Option<Value>) -> Result<String, anyhow::Error> {
+        let vault_ops = self.vault_ops.as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Vault not configured"))?;
+
+        let _ = arguments; // 引数なし
+
+        let result = execute_get_template_markdown(&self.config, vault_ops, None)?;
+        Ok(serde_json::to_string_pretty(&result)?)
+    }
+
+    /// list_note_tags ツールを実行
+    fn execute_list_note_tags(&self, arguments: Option<Value>) -> Result<String, anyhow::Error> {
+        let _ = arguments; // filter 現時点未使用
+
+        let result = execute_list_note_tags(&self.config, None)?;
         Ok(serde_json::to_string_pretty(&result)?)
     }
 }

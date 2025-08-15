@@ -1,7 +1,7 @@
 # Obsidian MCP Server プロジェクト仕様書
 
 作成日時: 2025-07-31 12:00
-更新日時: 2025-08-14 15:25
+更新日時: 2025-08-15 10:00
 
 ## プロジェクト概要
 
@@ -42,33 +42,23 @@ struct Cli {
 
 ```text
 src/
-├── main.rs              # エントリーポイント
-├── config.rs            # 設定管理
-├── debug.rs             # デバッグ機能
-├── logger.rs            # ログ初期化/設定
-├── error.rs             # エラーハンドリング
-├── vault/               # Vault操作モジュール
+├── main.rs
+├── config.rs
+├── debug.rs
+├── logger.rs
+├── error.rs
+├── vault/
 │   ├── mod.rs
-│   └── operations.rs    # vault操作の共通処理
+│   └── operations.rs
 └── mcp/
-    ├── mod.rs           # MCPモジュール定義
-    ├── protocol.rs      # MCP プロトコル定義
-    ├── server.rs        # MCP サーバー実装
-    └── tools/           # MCPツール実装
+    ├── mod.rs
+    ├── protocol.rs
+    ├── server.rs
+    └── tools/
         ├── mod.rs
-        └── save_markdown.rs # Markdownファイル保存ツール
-
-test-scripts/            # テスト関連ファイル
-├── test_mcp.bat         # 通常モードのテストスクリプト
-├── test_mcp_root.bat    # ルートから移動したテストスクリプト
-├── test_debug.bat       # デバッグモードのテストスクリプト
-├── test_initialize.json # 初期化テスト用JSONファイル
-├── test_list_tools.json # ツール一覧テスト用JSONファイル
-└── test_save_markdown.json # Markdown保存テスト用JSONファイル
-
-debug-vault/             # デバッグモード用vault（自動生成）
-└── Tips/
-    └── sample-note.md   # デバッグ用サンプルファイル
+        ├── save_markdown.rs
+        ├── get_template.rs
+        └── list_tags.rs
 ```
 
 ## データ構造
@@ -78,18 +68,22 @@ debug-vault/             # デバッグモード用vault（自動生成）
 アプリケーション設定を管理する構造体。
 
 ```rust
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     vault_dir: Option<PathBuf>, // プライベートフィールド
+    template_file: Option<PathBuf>,
+    #[serde(default)]
+    tag_list: Vec<String>,
 }
 ```
 
-主要メソッド:
+- `template_file`: テンプレートファイル (vault からの相対パス)。未設定可。
+- `tag_list`: ノートタグ候補。デフォルト `["Tips"]`。
 
-- `get_vault_dir()` - vault_dir を取得（None の場合はエラー）
-- `set_vault_dir<P: AsRef<Path>>(&mut self, path: P)` - vault_dir を設定
-- `load_or_default(config_path: PathBuf)` - 設定ファイルから読み込み。存在しない場合はデフォルト生成し保存
-- `save_to_file(path: &Path)` / `load_from_file(path: PathBuf)` - 永続化/読み込み
+主要メソッド (抜粋):
+
+- `get_template_file()` / `set_template_file()`
+- `get_tag_list()` / `set_tag_list()`
 
 設計変更 (旧仕様との差分):
 
@@ -191,6 +185,50 @@ pub const TARGET_DIRECTORY: &str = "Tips";
   - 既存ファイルの重複チェック
   - ディレクトリ存在確認
   - ファイル名の検証
+
+#### get_template_markdown ツール (src/mcp/tools/get_template.rs)
+
+設定されたテンプレート Markdown コンテンツを返却するツール。
+
+主要メソッド:
+
+- `get_template_markdown()` - テンプレート取得処理
+
+入力:
+
+- 空オブジェクト `{}`
+
+出力:
+
+- `{ template_content: String, path: String, message: String }`
+
+エラー条件:
+
+- 未設定 / ファイル不存在 / vault 外アクセス / 読込失敗
+
+セキュリティ:
+
+- 正規化後に `VaultOperations::is_path_within_vault` で検証
+
+#### list_note_tags ツール (src/mcp/tools/list_tags.rs)
+
+設定タグ候補一覧を返却するツール。
+
+主要メソッド:
+
+- `list_note_tags()` - タグ一覧処理
+
+入力:
+
+- `{ filter?: string }` (現時点未使用、将来拡張用)
+
+出力:
+
+- `{ tags: Vec<String>, filtered: bool, message: String }`
+
+エラー条件:
+
+- なし (空でも成功)
 
 ### Error Handling (src/error.rs)
 

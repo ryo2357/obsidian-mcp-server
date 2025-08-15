@@ -4,12 +4,26 @@ use std::path::{Path, PathBuf};
 
 
 /// アプリケーション設定
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     /// Obsidian vault のパス
     vault_dir: Option<PathBuf>,
+    /// テンプレートファイル (vault_dir からの相対パス)
+    template_file: Option<PathBuf>,
+    /// ノートタグ候補一覧
+    #[serde(default)]
+    tag_list: Vec<String>,
 }
 
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            vault_dir: None,
+            template_file: None,
+            tag_list: vec!["Tips".to_string()],
+        }
+    }
+}
 
 
 impl Config {
@@ -19,18 +33,30 @@ impl Config {
             .with_context(|| "Vault path is not configured. Please set vault_dir in config file.")
     }
 
-    
     pub fn set_vault_dir<P: AsRef<Path>>(&mut self, path: P) {
         self.vault_dir = Some(path.as_ref().to_path_buf());
     }
+
+    /// template_file を取得 (Option)
+    pub fn get_template_file(&self) -> Option<&PathBuf> { self.template_file.as_ref() }
+    /// template_file を設定
+    pub fn set_template_file<P: AsRef<Path>>(&mut self, path: P) { self.template_file = Some(path.as_ref().to_path_buf()); }
+
+    /// tag_list を取得
+    pub fn get_tag_list(&self) -> &[String] { &self.tag_list }
+    /// tag_list を設定 (全置換)
+    pub fn set_tag_list<I: IntoIterator<Item=String>>(&mut self, tags: I) { self.tag_list = tags.into_iter().collect(); }
 
     /// 設定ファイルを読み込み
     pub fn load_from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
         let contents = std::fs::read_to_string(&path)
             .with_context(|| format!("Failed to read config file: {}", path.as_ref().display()))?;
         
-        let config: Config = toml::from_str(&contents)
+        let mut config: Config = toml::from_str(&contents)
             .with_context(|| "Failed to parse config file")?;
+        
+        // 欠落フィールドのデフォルト補完（serde default で補完されるが念のため）
+        if config.tag_list.is_empty() { config.tag_list = vec!["Tips".to_string()]; }
         
         Ok(config)
     }
@@ -64,5 +90,35 @@ impl Config {
             }
             Ok(config)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Config;
+    use anyhow::Result;
+    use tempfile::TempDir;
+    use std::path::PathBuf;
+
+    #[test]
+    fn test_default_config() {
+        let c = Config::default();
+        assert_eq!(c.get_tag_list(), ["Tips".to_string()]);
+        assert!(c.get_template_file().is_none());
+    }
+
+    #[test]
+    fn test_roundtrip_config() -> Result<()> {
+        let tmp = TempDir::new()?;
+        let path = tmp.path().join("config.toml");
+        let mut c = Config::default();
+        c.set_vault_dir(tmp.path());
+        c.set_tag_list(vec!["A".into(), "B".into()]);
+        c.set_template_file("Templates/daily.md");
+        c.save_to_file(&path)?;
+        let loaded = Config::load_from_file(&path)?;
+        assert_eq!(loaded.get_tag_list(), ["A", "B"]);
+        assert_eq!(loaded.get_template_file().unwrap(), &PathBuf::from("Templates/daily.md"));
+        Ok(())
     }
 }
