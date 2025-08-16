@@ -1,18 +1,22 @@
-mod config;
-mod debug;
-mod error;
-mod mcp;
-mod vault;
-mod logger;
+
 
 use clap::Parser;
 use config::Config;
 use debug::DebugConfig;
 use error::AppResult;
-use mcp::server::McpServer;
 use std::path::PathBuf;
 use once_cell::sync::Lazy;
 use log::{debug};
+
+mod config;
+mod debug;
+mod error;
+mod vault;
+mod logger;
+mod mcp;
+
+// mod past_mcp;
+// use past_mcp::server::McpServer;
 
 pub static APP_DIR: Lazy<PathBuf>  = Lazy::new(|| 
   if let Some(config_dir) = dirs::config_dir() {
@@ -91,13 +95,13 @@ async fn main() -> AppResult<()> {
     };
 
     // MCP サーバーを作成・起動
-    let mut server = McpServer::new(config);
+    // let mut server = McpServer::new(config);
 
-    if cli.sync {
-        server.run_sync()?;
-    } else {
-        server.run_async().await?;
-    }
+    // if cli.sync {
+    //     server.run_sync()?;
+    // } else {
+    //     server.run_async().await?;
+    // }
 
     Ok(())
 }
