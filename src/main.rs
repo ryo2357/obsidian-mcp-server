@@ -7,16 +7,16 @@ use error::AppResult;
 use std::path::PathBuf;
 use once_cell::sync::Lazy;
 use log::{debug};
+use rmcp::{ServiceExt, transport::io::stdio};
 
 mod config;
 mod debug;
 mod error;
-mod vault;
+// mod vault;
 mod logger;
-mod mcp;
+mod server;
 
-// mod past_mcp;
-// use past_mcp::server::McpServer;
+
 
 pub static APP_DIR: Lazy<PathBuf>  = Lazy::new(|| 
   if let Some(config_dir) = dirs::config_dir() {
@@ -26,6 +26,9 @@ pub static APP_DIR: Lazy<PathBuf>  = Lazy::new(||
       PathBuf::from("./.config")
 });
 
+pub static CONFIG_PATH: Lazy<PathBuf>  = Lazy::new(|| 
+  APP_DIR.join("config.toml"));
+
 
 /// Obsidian MCP サーバー
 #[derive(Parser)]
@@ -33,20 +36,8 @@ pub static APP_DIR: Lazy<PathBuf>  = Lazy::new(||
 #[command(about = "Model Context Protocol server for Obsidian")]
 #[command(version = env!("CARGO_PKG_VERSION"))]
 struct Cli {
-    /// 設定ファイルのパス
-    #[arg(short, long)]
-    config: Option<PathBuf>,
-
-    /// Obsidian vault のパス
-    #[arg(short, long)]
-    vault_dir: Option<PathBuf>,
-
-    /// 同期モードで実行（テスト用）
-    #[arg(long)]
-    sync: bool,
-
     /// デバッグモードで実行
-    #[arg(long)]
+    #[arg(short,long)]
     debug: bool,
 }
 
@@ -77,31 +68,17 @@ async fn main() -> AppResult<()> {
           // 通常モードでロガーを初期化
           logger::init_logger("info", APP_DIR.join("logs"))?;
 
-          // 通常モードの設定を読み込み
-          let config_path = match cli.config {
-              Some(path) => path,
-              None => APP_DIR.join("config.toml"),
-          };
-          let mut config = Config::load_or_default(config_path)?;
+          Config::load_or_default(CONFIG_PATH.clone())?
 
-          // コマンドライン引数で vault_dir を上書き
-          if let Some(vault_dir) = cli.vault_dir {
-              config.set_vault_dir(vault_dir);
-          }
-          config
-          
         },
         
     };
 
-    // MCP サーバーを作成・起動
-    // let mut server = McpServer::new(config);
+    // MCP サービスを作成し、標準入出力トランスポートで提供
+    let service = server::ObsidianServer::new(config).serve(stdio()).await?;
+    // クライアントからの要求を待機
+    service.waiting().await?;
 
-    // if cli.sync {
-    //     server.run_sync()?;
-    // } else {
-    //     server.run_async().await?;
-    // }
 
     Ok(())
 }

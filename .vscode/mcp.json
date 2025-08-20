@@ -1,0 +1,11 @@
+{
+  "servers": {
+    "obsidian-mcp-server": {
+      "type": "stdio",
+      "command": "./target/debug/obsidian-mcp-server",
+      "args": [
+        "--debug"
+      ],
+    },
+  }
+}

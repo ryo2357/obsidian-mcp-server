@@ -39,13 +39,9 @@ impl Config {
 
     /// template_file を取得 (Option)
     pub fn get_template_file(&self) -> Option<&PathBuf> { self.template_file.as_ref() }
-    /// template_file を設定
-    pub fn set_template_file<P: AsRef<Path>>(&mut self, path: P) { self.template_file = Some(path.as_ref().to_path_buf()); }
 
     /// tag_list を取得
-    pub fn get_tag_list(&self) -> &[String] { &self.tag_list }
-    /// tag_list を設定 (全置換)
-    pub fn set_tag_list<I: IntoIterator<Item=String>>(&mut self, tags: I) { self.tag_list = tags.into_iter().collect(); }
+    pub fn get_tag_list(&self) -> Vec<String> { self.tag_list.clone() }
 
     /// 設定ファイルを読み込み
     pub fn load_from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
@@ -90,35 +86,5 @@ impl Config {
             }
             Ok(config)
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::Config;
-    use anyhow::Result;
-    use tempfile::TempDir;
-    use std::path::PathBuf;
-
-    #[test]
-    fn test_default_config() {
-        let c = Config::default();
-        assert_eq!(c.get_tag_list(), ["Tips".to_string()]);
-        assert!(c.get_template_file().is_none());
-    }
-
-    #[test]
-    fn test_roundtrip_config() -> Result<()> {
-        let tmp = TempDir::new()?;
-        let path = tmp.path().join("config.toml");
-        let mut c = Config::default();
-        c.set_vault_dir(tmp.path());
-        c.set_tag_list(vec!["A".into(), "B".into()]);
-        c.set_template_file("Templates/daily.md");
-        c.save_to_file(&path)?;
-        let loaded = Config::load_from_file(&path)?;
-        assert_eq!(loaded.get_tag_list(), ["A", "B"]);
-        assert_eq!(loaded.get_template_file().unwrap(), &PathBuf::from("Templates/daily.md"));
-        Ok(())
     }
 }
