@@ -1,0 +1,6 @@
+[tasks.inspect]
+description = "MCP Inspector によるデバッグ"
+run = [
+  "cargo build",
+  "npx @modelcontextprotocol/inspector ./target/debug/obsidian-mcp-server --debug"
+]
