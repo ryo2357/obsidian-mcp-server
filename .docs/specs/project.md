@@ -1,386 +1,151 @@
 # Obsidian MCP Server プロジェクト仕様書
 
 作成日時: 2025-07-31 12:00
-更新日時: 2025-08-15 10:00
+更新日時: 2025-08-20 12:30
 
 ## プロジェクト概要
 
 Obsidian Vault を操作するための Model Context Protocol (MCP) サーバーの実装。
-Rust で記述され、JSON-RPC 2.0 プロトコルを使用してクライアントとの通信を行う。
+
+Rust で記述され、`rmcp` クレートを用いた MCP サーバーフレームワーク上で動作する。
+
+現行実装は `rmcp` クレートを利用した最小サーバー構成。
 
 ## コマンドライン引数
 
 ```rust
 #[derive(Parser)]
 struct Cli {
-    /// 設定ファイルのパス
-    #[arg(short, long)]
-    config: Option<PathBuf>,
-
-    /// Obsidian vault のパス
-    #[arg(short, long)]
-    vault_dir: Option<PathBuf>,
-
-    /// 同期モードで実行（テスト用）
-    #[arg(long)]
-    sync: bool,
-
-    /// デバッグモードで実行
-    #[arg(long)]
-    debug: bool,
+        /// デバッグモードで実行
+        #[arg(short,long)]
+        debug: bool,
 }
 ```
 
 利用可能なオプション:
 
-- `-c, --config <CONFIG>`: 設定ファイルのパス
-- `-v, --vault-dir <VAULT_DIR>`: Obsidian vault のパス
-- `--sync`: 同期モードで実行（テスト用）
 - `--debug`: デバッグモードで実行（debug-vault/ を自動使用）
 
-## プロジェクト構造
+現行 CLI は `--debug` フラグのみを受け付ける最小構成へ簡素化された。（旧: `--config`, `--vault-dir`, `--sync` は削除。設定ファイル位置は固定ロジック化。）
+
+### 起動時設定ロードフロー
+
+1. `--debug` 指定時: `DebugConfig` で `./debug-vault` と `./.config/config.toml` を使用しサンプルノート生成。ログは `./.config/logs`。
+2. 通常時: `dirs::config_dir()/obsidian-mcp-server/config.toml` を生成/読み込みし、ログは同ディレクトリ配下 `logs/`。
+
+## プロジェクト構造（現行）
 
 ```text
 src/
-├── main.rs
-├── config.rs
-├── debug.rs
-├── logger.rs
-├── error.rs
-├── vault/
-│   ├── mod.rs
-│   └── operations.rs
-└── mcp/
-    ├── mod.rs
-    ├── protocol.rs
-    ├── server.rs
-    └── tools/
-        ├── mod.rs
-        ├── save_markdown.rs
-        ├── get_template.rs
-        └── list_tags.rs
+├── main.rs          # エントリポイント / CLI / ロガー初期化 / サービス起動
+├── server.rs        # rmcp ベースの ObsidianServer 実装（ツール登録含む）
+├── config.rs        # アプリ設定 (vault_dir, template_file, tag_list)
+├── debug.rs         # デバッグモード環境構築
+├── logger.rs        # flexi_logger 初期化
+├── error.rs         # 共通エラー型（AppResult）
+├── vault.rs         # VaultOperations（ファイル保存/検証ユーティリティ）
+└── （将来追加予定のモジュールは適宜拡張）
 ```
+
+（旧構成に関する記述は省略）
 
 ## データ構造
 
-### Config (src/config.rs)
-
-アプリケーション設定を管理する構造体。
+### Config (`src/config.rs`)
 
 ```rust
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
-    vault_dir: Option<PathBuf>, // プライベートフィールド
-    template_file: Option<PathBuf>,
-    #[serde(default)]
-    tag_list: Vec<String>,
+        vault_dir: Option<PathBuf>,
+        template_file: Option<PathBuf>,
+        #[serde(default)]
+        tag_list: Vec<String>,
 }
 ```
 
-- `template_file`: テンプレートファイル (vault からの相対パス)。未設定可。
-- `tag_list`: ノートタグ候補。デフォルト `["Tips"]`。
+- `vault_dir`: Vault ルートパス（必須: 実行前に設定される想定）
+- `template_file`: テンプレートファイル相対パス（任意）
+- `tag_list`: タグ候補（デフォルト: `["Tips"]`）
 
-主要メソッド (抜粋):
+### VaultOperations (`src/vault.rs`)
 
-- `get_template_file()` / `set_template_file()`
-- `get_tag_list()` / `set_tag_list()`
+ファイル保存とパス検証ユーティリティ。
 
-設計変更 (旧仕様との差分):
+主メソッド:
 
-- フィールド名 `vault_path` → `vault_dir` にリネーム（整合性向上）
-- `default_config_path()` を削除し、呼び出し元で明示パス決定
-- `load_or_default` の引数を `Option<&Path>` から `PathBuf` に変更し責務を単純化
+- `save_markdown_file`（ファイル存在/境界/名前検証。
+  - `.md` 自動付与
+  - 既存ファイル上書き防止
+  - Windows 予約語 / 危険文字 / ".." 排除）
+- `is_path_within_vault`
+- `validate_filename`
 
-### MCP Protocol (src/mcp/protocol.rs)
+### MCP サーバー (`src/server.rs`)
 
-JSON-RPC 2.0 および MCP プロトコルに関連する構造体を定義。
-
-主要構造体:
-
-- `JsonRpcRequest` - JSON-RPC 2.0 リクエスト
-- `JsonRpcResponse` - JSON-RPC 2.0 レスポンス
-- `InitializeParams` - 初期化パラメータ
-- `InitializeResult` - 初期化結果
-- `ServerInfo` - サーバー情報
-- `ServerCapabilities` - サーバー機能
-- `ListToolsResult` - ツール一覧結果
-- `Tool` - ツール定義
-- `CallToolParams` - ツール呼び出しパラメータ
-- `CallToolResult` - ツール呼び出し結果
-- `ToolContent` - ツールの出力コンテンツ
-
-### MCP Server (src/mcp/server.rs)
-
-MCP サーバーの実装。
+`rmcp` の `tool_router` マクロでツール登録。
 
 ```rust
-pub struct McpServer {
-    config: Config,
-    initialized: bool,
-    vault_ops: Option<VaultOperations>,
+pub struct ObsidianServer {
+    config: Arc<Mutex<Config>>,
+    tool_router: ToolRouter<ObsidianServer>,
 }
 ```
 
-主要メソッド:
+提供ツール:
 
-- `new(config: Config)` - 新しいサーバーインスタンスを作成
-- `run_sync()` - 同期版サーバー実行（テスト用）
-- `run_async()` - 非同期版サーバー実行
-- `handle_request()` - リクエスト処理
-- `handle_initialize()` - 初期化処理
-- `handle_list_tools()` - ツール一覧処理
-- `handle_call_tool()` - ツール呼び出し処理
+| ツール   | 説明                     | 出力                                                |
+| -------- | ------------------------ | --------------------------------------------------- |
+| get_tags | `Config.tag_list` を列挙 | `CallToolResult` (各タグを text Content として返却) |
 
-対応プロトコル:
+`initialize` ハンドラは `ProtocolVersion::V_2024_11_05` と tools capability を返却。
 
-- `initialize` - サーバー初期化
-- `tools/list` - 利用可能ツール一覧
-- `tools/call` - ツール実行
+### エラーハンドリング
 
-### Vault Operations (src/vault/operations.rs)
+アプリ全体: `type AppResult<T> = anyhow::Result<T>`。
 
-Vault 操作の共通処理を提供するモジュール。
+ツール: `Result<CallToolResult, McpError>`。
 
-```rust
-pub struct VaultOperations {
-    vault_path: PathBuf,
-    target_directory: String,
-}
-```
+### ログ出力機能
 
-主要メソッド:
+`flexi_logger` によるファイルロギング。サイズ 10MB ローテーション、最新 5 ファイル保持。
 
-- `new(vault_path: PathBuf, target_directory: String)` - 新しいインスタンスを作成
-- `save_markdown_file(filename: &str, content: &str)` - Markdown ファイルを保存
-- `validate_filename(filename: &str)` - ファイル名を検証
-- `is_path_within_vault(file_path: &Path)` - パスが vault 内にあるかチェック
-- `target_directory_exists()` - ターゲットディレクトリの存在確認
+### Markdown ファイル保存ユーティリティ
 
-セキュリティ機能:
+`VaultOperations::save_markdown_file` による安全な保存処理（ファイル名検証・パストラバーサル防止・重複防止）。
 
-- パストラバーサル攻撃の防止
-- ファイル名の検証（危険な文字の排除）
-- vault 外へのアクセス制限
+### 設定管理
 
-### MCP Tools (src/mcp/tools/)
-
-MCP ツールの実装を格納するモジュール。
-
-#### save_markdown_file ツール (src/mcp/tools/save_markdown.rs)
-
-Obsidian vault 内に Markdown ファイルを保存するツール。
-
-```rust
-pub const TARGET_DIRECTORY: &str = "Tips";
-```
-
-機能:
-
-- ファイル名: `.md`拡張子の自動付与
-- 保存先: vault 内の`Tips`ディレクトリ（定数で固定）
-- 入力パラメータ:
-  - `filename`: ファイル名（拡張子なし）
-  - `content`: Markdown コンテンツ
-- エラーハンドリング:
-  - 既存ファイルの重複チェック
-  - ディレクトリ存在確認
-  - ファイル名の検証
-
-#### get_template_markdown ツール (src/mcp/tools/get_template.rs)
-
-設定されたテンプレート Markdown コンテンツを返却するツール。
-
-主要メソッド:
-
-- `get_template_markdown()` - テンプレート取得処理
-
-入力:
-
-- 空オブジェクト `{}`
-
-出力:
-
-- `{ template_content: String, path: String, message: String }`
-
-エラー条件:
-
-- 未設定 / ファイル不存在 / vault 外アクセス / 読込失敗
-
-セキュリティ:
-
-- 正規化後に `VaultOperations::is_path_within_vault` で検証
-
-#### list_note_tags ツール (src/mcp/tools/list_tags.rs)
-
-設定タグ候補一覧を返却するツール。
-
-主要メソッド:
-
-- `list_note_tags()` - タグ一覧処理
-
-入力:
-
-- `{ filter?: string }` (現時点未使用、将来拡張用)
-
-出力:
-
-- `{ tags: Vec<String>, filtered: bool, message: String }`
-
-エラー条件:
-
-- なし (空でも成功)
-
-### Error Handling (src/error.rs)
-
-エラーハンドリングと MCP エラーレスポンスの定義。
-
-```rust
-pub type AppResult<T> = Result<T, anyhow::Error>;
-
-pub struct McpError {
-    pub code: i32,
-    pub message: String,
-    pub data: Option<serde_json::Value>,
-}
-```
-
-### Debug Module (src/debug.rs)
-
-デバッグ実行時の補助機能を提供するモジュール。
-
-```rust
-pub struct DebugConfig {
-    pub vault_dir: PathBuf,
-    pub config_path: PathBuf,
-    pub config_dir: PathBuf,
-}
-```
-
-主要メソッド:
-
-- `new()` - デフォルト値を設定
-- `ensure_debug_vault()` - デバッグ用 vault とサブディレクトリ (`Tips`) を作成
-- `generate_dummy_data()` - サンプル Markdown を生成
-
-変更点:
-
-- フィールド `vault_path` → `vault_dir` に追随リネーム
-- ログ出力用 `config_dir` フィールドを追加（`.config/logs`）
-- 標準出力へのデバッグログ依存を削減（ファイルロギングへ移行）
-
-### Logging (src/logger.rs)
-
-`flexi_logger` を用いたファイルベースのロギング初期化。
-
-機能:
-
-- ログレベル（`debug` / `info` 等）を文字列指定で初期化
-- ログ出力先: 実行モードに応じた設定ディレクトリ配下 `logs/`
-  - 通常モード: OS 毎の設定ルート（`dirs::config_dir()/obsidian-mcp-server/logs`）
-  - デバッグモード: プロジェクトルート直下の `.config/logs/`
-- ログファイル命名: `log-<timestamp>.log`
-- ローテーション: サイズ基準 10MB (`Criterion::Size(10 * 1024 * 1024)`)
-- 保持ポリシー: 最新 5 ファイル (`Cleanup::KeepLogFiles(5)`)
-- フォーマット: `flexi_logger::detailed_format`
-
-初期化フロー:
-
-- `main.rs` 起動時にモード判定 → `logger::init_logger(level, path)` 呼び出し
-- 以降 `log` クレートのマクロ（`debug!` 等）で記録
-
-設計意図:
-
-- 標準入出力は MCP プロトコル通信占有のため混在回避
-- ファイルロギングでデバッグと運用の両立
-
-## コーディング規約
-
-### インポート規約
-
-- アスタリスク（`*`）を使ったインポートは避け、具体的な型名を明示する
-- 未使用のインポートは削除する
-
-### 設定管理規約
-
-- `vault_path`が None の場合は、適切なエラーメッセージでエラーを発生させる
-- デフォルト設定では`vault_path`は`None`で、コマンドライン引数での指定が必須
-- `vault_path`フィールドはプライベートとし、セッターメソッド経由でのアクセスを強制する
-- 設定ファイルパスの指定は`load_or_default`メソッドのパラメータで行う
-
-### ツール実装規約
-
-- ツール固有の設定は定数として各ツールファイルに定義する
-- セキュリティを重視し、vault 外へのアクセスを制限する
-- ファイル名の検証を必ず実行する
-
-### テストスクリプト管理規約
-
-- 全てのテスト用 bat スクリプトは `test-scripts/` フォルダに保存する
-- JSON テストファイルも同様に `test-scripts/` フォルダに保存する
-- デバッグモード用とリリースモード用でスクリプトを分離する
-
-## 依存関係
-
-主要な依存関係:
-
-- `anyhow` - エラーハンドリング
-- `serde` / `serde_json` - シリアライゼーション
-- `tokio` - 非同期ランタイム
-- `toml` - 設定ファイル解析
-- `dirs` - システムディレクトリ取得
-- `clap` - コマンドライン解析
-- `chrono` - 日時処理（デバッグ用データ生成）
-- `flexi_logger` - ファイルロギング & ローテーション
-- `log` - ロギングファサード
-- `once_cell` - グローバル遅延初期化 (`APP_DIR`)
-
-開発時依存関係:
-
-- `tempfile` - テスト用一時ファイル作成
-
-## 実装済み機能
-
-### ログ出力機能（新規）
-
-- `flexi_logger` によるファイルベースログ
-- デバッグ/通常モードで異なる出力先ディレクトリ
-- サイズローテーション & 保持数制御
-- 標準入出力混在を回避し通信チャネルを保全
-
-### Markdown ファイル保存機能
-
-- `save_markdown_file` MCP ツールとして実装済み
-- Vault 内の`Tips`ディレクトリにファイルを保存
-- セキュリティチェック、ファイル名検証、重複チェックを実装
-- テスト済み、動作確認完了
+- `load_or_default` がファイル非存在時にデフォルト生成
+- デバッグ / 通常で設定ファイル & ログ格納パスを分離
 
 ### デバッグ機能
 
-- `--debug` フラグによるデバッグモード
-- 固定パス（`./debug-vault/`）でのデバッグ環境自動構築
-- サンプル Markdown ファイルの自動生成
-- ファイルロギング（標準出力依存から移行）
+`DebugConfig` により demo Vault (`./debug-vault`) とサンプルノートを自動生成。
 
-### コードリファクタリング
+## コーディング規約（抜粋）
 
-- ワイルドカードインポート（`use *`）の除去
-- 明示的なインポートへの変更
-- コードの可読性向上
-- テスト実行済み、正常動作確認完了
+- ワイルドカードインポート禁止
+- Vault 外アクセス禁止（パス正規化 & prefix チェック）
+- ファイル名バリデーション必須
 
-### 設定管理リファクタリング
+## 依存関係（主要）
 
-- `Config`構造体の`vault_path`フィールドをプライベート化
-- `set_vault_path`メソッドの追加による設定アクセスの制御
-- `load_or_default`メソッドのオプション設定パス機能
-- `DebugConfig`の`config_path`フィールド追加
-- デバッグモードと通常モードの統合処理
-- コードの可読性向上とメンテナビリティの改善
-- テスト実行済み、正常動作確認完了
+- anyhow / serde / serde_json / tokio / toml / dirs / clap / chrono / flexi_logger / log / once_cell
+
+開発: tempfile
+
+## 実装済み機能サマリ
+
+- rmcp ベースサーバー (`get_tags` ツール)
+- デバッグ環境自動構築（サンプルノート生成）
+- ファイルロギング（サイズローテーション）
+- Markdown 保存ユーティリティ（API 化前段階）
 
 ## 今後の拡張予定
 
-1. ~~Obsidian Vault 操作機能の実装~~ （完了）
-2. テンプレートファイル読み込み機能
-3. ファイル検索機能
-4. メタデータ操作機能
+1. `get_tags` のフィルタ / メタ情報拡張
+2. Markdown 保存ツール（push_markdown）公開化
+3. テンプレート取得ツール追加
+4. 設定ホットリロード
+5. Vault 内検索（一覧 / 全文）
+6. メタデータ操作（frontmatter 編集）
