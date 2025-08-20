@@ -1,7 +1,7 @@
 # Obsidian MCP Server プロジェクト仕様書
 
 作成日時: 2025-07-31 12:00
-更新日時: 2025-08-20 15:10
+更新日時: 2025-08-20 16:36
 
 ## プロジェクト概要
 
@@ -105,10 +105,11 @@ pub struct ObsidianServer {
 
 提供ツール:
 
-| ツール       | 説明                               | 入力 | 出力                            |
-| ------------ | ---------------------------------- | ---- | ------------------------------- |
-| get_tags     | `Config.tag_list` を列挙           | なし | 各タグ文字列を text Content 群  |
-| get_template | 設定されたテンプレートファイル読込 | なし | テンプレート内容 (text Content) |
+| ツール        | 説明                                        | 入力 (Parameters)                      | 出力                                             |
+| ------------- | ------------------------------------------- | -------------------------------------- | ------------------------------------------------ |
+| get_tags      | `Config.tag_list` を列挙                    | なし                                   | 各タグ文字列を text Content 群                   |
+| get_template  | 設定されたテンプレートファイル読込          | なし                                   | テンプレート内容 (text Content)                  |
+| push_markdown | Markdown ファイルを `output_dir` に安全保存 | `{ filename: String, content: String}` | JSON 文字列: `{"status":"ok","message":"Saved"}` |
 
 `initialize` ハンドラは `ProtocolVersion::V_2024_11_05` と tools capability を返却。
 
@@ -121,9 +122,32 @@ pub struct ObsidianServer {
 
 `flexi_logger` によるファイルロギング。サイズ 10MB ローテーション、最新 5 ファイル保持。
 
-### Markdown ファイル保存ユーティリティ
+### Markdown ファイル保存機能
 
-`VaultOperations::save_markdown_file` による安全な保存処理（ファイル名検証・パストラバーサル防止・重複防止）。
+内部ユーティリティ `VaultOperations::save_markdown_file` を MCP ツール `push_markdown` から公開。
+
+### 検証項目
+
+- ファイル名検証 (`validate_filename`) : 危険文字 / `..` / Windows 予約語排除
+- `.md` 自動付与（既に付与済みならそのまま）
+- パストラバーサル防止: `resolve_relative_in_vault` + `is_path_within_vault`
+- 既存ファイル存在時はエラー（上書き禁止）
+
+### ツール実装詳細
+
+- 関数シグネチャ: `async fn push_markdown(&self, Parameters(input): Parameters<PushMarkdownInput>)`
+- `PushMarkdownInput` は `serde` / `schemars` を用いてシリアライズ & スキーマ生成
+- 成功時: JSON を text Content で返却（保存パスは非公開）
+- 失敗時: `McpError::new(ErrorCode::INTERNAL_ERROR, ..)` でエラー返却
+- ログ: 成功 `INFO`, 失敗 `ERROR`
+
+### エラーメッセージ例
+
+- 無効ファイル名: `Filename contains invalid character: *` 等
+- 既存ファイル: `File already exists: <path>`
+- ディレクトリ不存在: `Target directory does not exist: <path>`
+- Vault 逸脱: `File path is outside vault: <path>`
+- 書込失敗: `Failed to write file: <path>`
 
 ### 設定管理
 
@@ -148,8 +172,8 @@ pub struct ObsidianServer {
 
 ## 実装機能サマリ
 
-- MCP サーバー（`rmcp`）: ツール `get_tags`, `get_template`
+- MCP サーバー（`rmcp`）: ツール `get_tags`, `get_template`, `push_markdown`
 - 設定ロード & デバッグ用 Vault 自動生成
 - ロギング（サイズローテーション）
-- Vault 内 Markdown 保存ユーティリティ（API 化準備段階）
+- Vault 内 Markdown 保存ツール公開 (`push_markdown`)
 - テンプレートファイル安全読込

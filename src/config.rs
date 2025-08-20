@@ -1,5 +1,5 @@
 use anyhow::Context;
-use serde::{Deserialize, Serialize};
+use serde::{de, Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 
@@ -65,8 +65,10 @@ impl Config {
             .with_context(|| "Failed to parse config file")?;
         
         // 欠落フィールドのデフォルト補完（serde default で補完されるが念のため）
-        if config.tag_list.is_empty() { config.tag_list = vec!["Tips".to_string()]; }
-        
+        let default_config = Config::default();
+        if config.tag_list.is_empty() { config.tag_list = default_config.tag_list; }
+        if config.output_dir.is_empty() { config.output_dir = default_config.output_dir; }
+
         Ok(config)
     }
 

@@ -1,18 +1,19 @@
 
-#![allow(dead_code)]
 use std::sync::Arc;
-
 use rmcp::{
     ErrorData as McpError, RoleServer, ServerHandler,
     model::ErrorCode,
-    handler::server::{router::tool::ToolRouter},
+    handler::server::{router::tool::ToolRouter, tool::Parameters},
     model::*,
     service::RequestContext,
     tool, tool_handler, tool_router,
 };
 // use serde_json::json;
 use tokio::sync::Mutex;
-use log::info;
+use log::{info, error};
+use serde::{Deserialize, Serialize};
+use schemars::JsonSchema;
+use log::debug;
 
 use crate::{Config};
 use crate::vault::VaultOperations;
@@ -28,11 +29,19 @@ pub struct ObsidianServer {
     tool_router: ToolRouter<ObsidianServer>,
 }
 
+#[derive(Deserialize, Serialize, JsonSchema)]
+struct PushMarkdownInput {
+    pub filename: String,
+    pub content: String,
+}
+
 #[tool_router]
 impl ObsidianServer {
 
     #[allow(dead_code)]
     pub fn new(config: Config) -> Self {
+
+        debug!("config: {:?}", config);
 
         let vault= VaultOperations::new(
             config.get_vault_dir().expect("error: config::get_vault_dir()"),
@@ -90,6 +99,38 @@ impl ObsidianServer {
     }
 
     // markdownファイルをVaultに追加するツール
+    #[tool(description = "VaultにMarkdownファイルを追加する")]
+    async fn push_markdown(
+      &self,
+      Parameters(input): Parameters<PushMarkdownInput>
+    ) -> Result<CallToolResult, McpError> {
+        let filename = input.filename;
+        let content = input.content;
+
+        let save_result = {
+            let vault = self.vault.lock().await;
+            vault.save_markdown_file(&filename, &content)
+        };
+
+        match save_result {
+            Ok(path) => {
+                info!("Saved markdown file: {}", path.display());
+                let body = serde_json::json!({
+                    "status": "ok",
+                    "message": "Saved"
+                }).to_string();
+                Ok(CallToolResult::success(vec![Content::text(body)]))
+            }
+            Err(e) => {
+                error!("Failed to save markdown file '{}': {}", filename, e);
+                Err(McpError::new(
+                    ErrorCode::INTERNAL_ERROR,
+                    format!("{}", e),
+                    None,
+                ))
+            }
+        }
+    }
 
 }
 
@@ -107,8 +148,7 @@ impl ServerHandler for ObsidianServer {
             // instructions: Some("このサーバーはカウンターツールを提供します。カウンター値は'increment'と'decrement'ツールで変更でき、'get_value'で現在値を取得できます。初期値は0です。".to_string()),
             instructions: Some(concat!(
               "このサーバーはObsidianのVaultを操作するツールを提供します。",
-              "'get_tags'と'get_template'ツールでVaultの情報値を取得し、",
-              "'push_markdown'でVaultにMarkdownファイルを追加できます。",
+              "'get_tags'と'get_template'ツールでVaultの情報値を取得し、'push_markdown'でVaultにMarkdownファイルを追加できます。",
             ).to_string())
         }
     }

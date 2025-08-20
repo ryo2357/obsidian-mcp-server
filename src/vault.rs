@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf, Component};
 use std::fs;
+use log::debug;
 
 /// Vault操作に関する共通処理
 pub struct VaultOperations {
@@ -11,6 +12,7 @@ pub struct VaultOperations {
 impl VaultOperations {
     /// 新しいVaultOperationsインスタンスを作成
     pub fn new(vault_path: PathBuf, target_directory: String) -> Self {
+        debug!("target_directory: {}", target_directory);
         Self {
             vault_path,
             target_directory,
