@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -6,11 +6,14 @@ use std::path::{Path, PathBuf};
 /// アプリケーション設定
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
-    /// Obsidian vault のパス
+    // Obsidian vault のパス
     vault_dir: Option<PathBuf>,
-    /// テンプレートファイル (vault_dir からの相対パス)
+    // テンプレートファイル (vault_dir からの相対パス)
     template_file: Option<PathBuf>,
-    /// ノートタグ候補一覧
+    // 出力先ディレクトリ(vault_dir からの相対パス)
+    #[serde(default)]
+    output_dir: String,
+    // ノートタグ候補一覧
     #[serde(default)]
     tag_list: Vec<String>,
 }
@@ -20,6 +23,7 @@ impl Default for Config {
         Self {
             vault_dir: None,
             template_file: None,
+            output_dir: String::from("Tips"),
             tag_list: vec!["Tips".to_string()],
         }
     }
@@ -28,8 +32,10 @@ impl Default for Config {
 
 impl Config {
     /// vault_dirを取得（Noneの場合はエラー）
-    pub fn get_vault_dir(&self) -> Result<&PathBuf> {
-        self.vault_dir.as_ref()
+    pub fn get_vault_dir(&self) -> anyhow::Result<PathBuf> {
+        self.vault_dir
+            .as_ref()
+            .cloned()
             .with_context(|| "Vault path is not configured. Please set vault_dir in config file.")
     }
 
@@ -38,13 +44,20 @@ impl Config {
     }
 
     /// template_file を取得 (Option)
-    pub fn get_template_file(&self) -> Option<&PathBuf> { self.template_file.as_ref() }
+    pub fn get_template_file(&self) -> Option<PathBuf> { 
+      self.template_file.clone()
+    }
 
     /// tag_list を取得
-    pub fn get_tag_list(&self) -> Vec<String> { self.tag_list.clone() }
+    pub fn get_tag_list(&self) -> Vec<String> { 
+      self.tag_list.clone() }
+
+    pub fn get_output_dir(&self) -> String {
+        self.output_dir.clone()
+    }
 
     /// 設定ファイルを読み込み
-    pub fn load_from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
+    pub fn load_from_file<P: AsRef<Path>>(path: P) -> anyhow::Result<Self> {
         let contents = std::fs::read_to_string(&path)
             .with_context(|| format!("Failed to read config file: {}", path.as_ref().display()))?;
         
@@ -58,7 +71,7 @@ impl Config {
     }
 
     /// 設定ファイルを保存
-    pub fn save_to_file<P: AsRef<Path>>(&self, path: P) -> Result<()> {
+    pub fn save_to_file<P: AsRef<Path>>(&self, path: P) -> anyhow::Result<()> {
         let contents = toml::to_string_pretty(self)
             .with_context(|| "Failed to serialize config")?;
         
@@ -74,7 +87,7 @@ impl Config {
     }
 
     /// 設定を読み込み、ファイルが存在しない場合はデフォルト値を使用
-    pub fn load_or_default(config_path: PathBuf) -> Result<Self> {
+    pub fn load_or_default(config_path: PathBuf) -> anyhow::Result<Self> {
 
         if config_path.exists() {
             Self::load_from_file(config_path)

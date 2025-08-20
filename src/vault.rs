@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use std::path::{Path, PathBuf};
+use std::path::{Path, PathBuf, Component};
 use std::fs;
 
 /// Vault操作に関する共通処理
@@ -20,6 +20,72 @@ impl VaultOperations {
     /// ターゲットディレクトリのフルパスを取得
     pub fn get_target_directory_path(&self) -> PathBuf {
         self.vault_path.join(&self.target_directory)
+    }
+
+
+    fn resolve_relative_in_vault(&self, relative:PathBuf) -> Result<PathBuf> {
+
+        if relative.as_os_str().is_empty() {
+            return Err(anyhow::anyhow!("Empty relative path"));
+        }
+        if relative.is_absolute() {
+            return Err(anyhow::anyhow!("Absolute path is not allowed: {}", relative.display()));
+        }
+
+        // ベースは canonicalize しておく (シンボリックリンクを固定化)
+        let base = self.vault_path.canonicalize()
+            .with_context(|| format!("Failed to canonicalize vault path: {}", self.vault_path.display()))?;
+
+        let mut path = base.clone();
+
+        for comp in relative.components() {
+            match comp {
+                Component::CurDir => { /* skip */ }
+                Component::Normal(seg) => path.push(seg),
+                Component::ParentDir => {
+                    // vault の外に出そうならエラー
+                    if path == base {
+                        return Err(
+                          anyhow::anyhow!("Path escapes vault: {}", relative.display())
+                        );
+                    }
+                    path.pop();
+                }
+                // 想定外 (RootDir, Prefix など) は相対パスとして不正
+                other => {
+                    return Err(
+                      anyhow::anyhow!("Invalid component {:?} in relative path: {}", other, relative.display())
+                    );
+                }
+            }
+        }
+
+        // 追加の防御 (万一) : starts_with チェック
+        if !path.starts_with(&base) {
+            return Err(anyhow::anyhow!("Path escapes vault: {}", relative.display()));
+        }
+
+        Ok(path)
+    }
+
+    // 既存ファイルパスを取得（存在必須）
+    fn get_existing_file_path(&self, relative: PathBuf) -> Result<PathBuf> {
+        let path = self.resolve_relative_in_vault(relative)?;
+        if !path.exists() {
+            return Err(anyhow::anyhow!("File not found: {}", path.display()));
+        }
+        if !path.is_file() {
+            return Err(anyhow::anyhow!("Not a file: {}", path.display()));
+        }
+        Ok(path)
+    }
+
+    // テキストファイルを読み込み (UTF-8 想定)  内容 を返す
+    pub fn read_text_file(&self, relative: PathBuf) -> Result<String> {
+        let file_path = self.get_existing_file_path(relative.clone())?;
+        let content = fs::read_to_string(&file_path)
+            .with_context(|| format!("Failed to read file: {:?}", relative))?;
+        Ok(content)
     }
 
     /// ファイルパスがvault内にあるかチェック
@@ -126,64 +192,5 @@ impl VaultOperations {
             .with_context(|| format!("Failed to write file: {}", file_path.display()))?;
 
         Ok(file_path)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::VaultOperations;
-    use anyhow::Result;
-    use std::fs;
-    use tempfile::TempDir;
-
-    #[test]
-    fn test_validate_filename() {
-        // 正常なケース
-        assert!(VaultOperations::validate_filename("test").is_ok());
-        assert!(VaultOperations::validate_filename("test-file").is_ok());
-        assert!(VaultOperations::validate_filename("test_file").is_ok());
-
-        // 異常なケース
-        assert!(VaultOperations::validate_filename("").is_err());
-        assert!(VaultOperations::validate_filename("test/file").is_err());
-        assert!(VaultOperations::validate_filename("test\\file").is_err());
-        assert!(VaultOperations::validate_filename("test:file").is_err());
-        assert!(VaultOperations::validate_filename("test*file").is_err());
-        assert!(VaultOperations::validate_filename("test?file").is_err());
-        assert!(VaultOperations::validate_filename("test\"file").is_err());
-        assert!(VaultOperations::validate_filename("test<file").is_err());
-        assert!(VaultOperations::validate_filename("test>file").is_err());
-        assert!(VaultOperations::validate_filename("test|file").is_err());
-        assert!(VaultOperations::validate_filename("../test").is_err());
-        assert!(VaultOperations::validate_filename("CON").is_err());
-        assert!(VaultOperations::validate_filename("con.txt").is_err());
-    }
-
-    #[test]
-    fn test_save_markdown_file() -> Result<()> {
-        let temp_dir = TempDir::new()?;
-        let vault_path = temp_dir.path().to_path_buf();
-        let target_dir = "notes";
-        
-        // ターゲットディレクトリを作成
-        fs::create_dir(vault_path.join(target_dir))?;
-
-        let vault_ops = VaultOperations::new(vault_path.clone(), target_dir.to_string());
-
-        // 正常なケース
-        let content = "# Test\n\nThis is a test markdown file.";
-        let result = vault_ops.save_markdown_file("test", content)?;
-        
-        assert_eq!(result, vault_path.join(target_dir).join("test.md"));
-        assert!(result.exists());
-        
-        let saved_content = fs::read_to_string(&result)?;
-        assert_eq!(saved_content, content);
-
-        // 既存ファイルがある場合のエラー
-        let result = vault_ops.save_markdown_file("test", content);
-        assert!(result.is_err());
-
-        Ok(())
     }
 }

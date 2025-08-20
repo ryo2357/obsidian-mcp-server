@@ -4,9 +4,9 @@ use std::sync::Arc;
 
 use rmcp::{
     ErrorData as McpError, RoleServer, ServerHandler,
-    handler::server::{router::tool::ToolRouter, tool::Parameters},
+    model::ErrorCode,
+    handler::server::{router::tool::ToolRouter},
     model::*,
-    schemars,
     service::RequestContext,
     tool, tool_handler, tool_router,
 };
@@ -14,7 +14,8 @@ use rmcp::{
 use tokio::sync::Mutex;
 use log::info;
 
-use crate::Config;
+use crate::{Config};
+use crate::vault::VaultOperations;
 
 
 /// カウンター機能の本体。カウンター値とツールルーターを保持する。
@@ -22,6 +23,7 @@ use crate::Config;
 pub struct ObsidianServer {
     // 参照する設定ファイル
     config: Arc<Mutex<Config>>,
+    vault: Arc<Mutex<VaultOperations>>,
     /// MCPツールルーター。ツール呼び出しのエントリポイント。
     tool_router: ToolRouter<ObsidianServer>,
 }
@@ -31,18 +33,25 @@ impl ObsidianServer {
 
     #[allow(dead_code)]
     pub fn new(config: Config) -> Self {
+
+        let vault= VaultOperations::new(
+            config.get_vault_dir().expect("error: config::get_vault_dir()"),
+            config.get_output_dir(),
+          );
+          
         Self {
             config: Arc::new(Mutex::new(config)),
+            vault: Arc::new(Mutex::new(vault)),
             tool_router: Self::tool_router(),
         }
     }
 
 
 
-    /// カウンター値を1増やすツール。
+    // タグリストを取得するツール
     #[tool(description = "Vaultのタグリストを取得する")]
     async fn get_tags(&self) -> Result<CallToolResult, McpError> {
-        let mut tags:Vec<String> = self.config.lock().await.get_tag_list();
+        let tags:Vec<String> = self.config.lock().await.get_tag_list();
 
         let contents: Vec<Content> = tags.into_iter()
             .map(Content::text)
@@ -50,6 +59,37 @@ impl ObsidianServer {
 
         Ok(CallToolResult::success(contents))
     }
+
+    // テンプレートファイルを取得するツール
+    #[tool(description = "Vaultのテンプレートファイルを取得する")]
+    async fn get_template(&self) -> Result<CallToolResult, McpError> {
+        let template_rel_path = {
+            let cfg = self.config.lock().await;
+            cfg.get_template_file()
+                .ok_or_else(|| McpError::new(
+                    ErrorCode::INTERNAL_ERROR,
+                    "テンプレートファイルが設定されていません",
+                    None,
+                ))?
+        };
+
+        let content = {
+            let vault = self.vault.lock().await;
+            vault.read_text_file(template_rel_path).map_err(|e| McpError::new(
+                ErrorCode::INTERNAL_ERROR,
+                format!("テンプレート読込に失敗: {e}"),
+                None,
+            ))?
+        };
+
+        let contents = vec![
+            Content::text(content),
+        ];
+
+        Ok(CallToolResult::success(contents))
+    }
+
+    // markdownファイルをVaultに追加するツール
 
 }
 

@@ -4,8 +4,8 @@ Obsidian 用の Model Context Protocol (MCP) サーバーです。
 
 ## 機能
 
+- Obsidian vault のテンプレートやタグリストを取得
 - Obsidian vault への Markdown ファイル保存
-- MCP 準拠の JSON-RPC 通信
 
 ## 使用方法
 
@@ -30,67 +30,24 @@ obsidian-mcp-server --debug
 - 追加のデバッグログが出力されます
 - `--vault-path` の指定は不要です
 
-### 同期モード（テスト用）
-
-```bash
-obsidian-mcp-server --sync
-```
-
 ## インストール
 
 ```bash
 cargo build --release
 ```
 
-## 利用可能なツール
-
-### save_markdown_file
-
-Markdown ファイルを指定されたディレクトリに保存します。
-
-**パラメータ:**
-
-- `filename`: ファイル名（.md 拡張子は自動付与）
-- `content`: Markdown コンテンツ
-
-**例:**
-
-```json
-{
-  "name": "save_markdown_file",
-  "arguments": {
-    "filename": "my-note",
-    "content": "# My Note\n\nThis is a test note."
-  }
-}
-```
-
 ## デバッグ環境の設定
 
 ### GitHub Copilot で使用する場合
 
-**デバッグモード:**
-
-```json
+```json:.vscode/mcp.json
 {
-  "mcpServers": {
+  "servers": {
     "obsidian-mcp-server": {
+      "type": "stdio",
       "command": "obsidian-mcp-server",
-      "args": ["--debug"]
-    }
-  }
-}
-```
 
-**本番モード:**
-
-```json
-{
-  "mcpServers": {
-    "obsidian-mcp-server": {
-      "command": "obsidian-mcp-server",
-      "args": ["--vault-path", "/path/to/production/vault"]
-    }
+    },
   }
 }
 ```
@@ -103,14 +60,25 @@ Markdown ファイルを指定されたディレクトリに保存します。
 cargo test
 ```
 
-### デバッグモードテスト
+### VSCode での検証
 
-```bash
-cargo run -- --debug --sync
+```json:.vscode/mcp.json
+{
+  "servers": {
+    "obsidian-mcp-server": {
+      "type": "stdio",
+      "command": "./target/debug/obsidian-mcp-server",
+      "args": [
+        "--debug"
+      ],
+    },
+  }
+}
+
 ```
 
-## リファクタリング履歴
+### MCP Inspector での検証
 
-- ワイルドカードインポート（`use *`）を明示的なインポートに変更
-- デバッグ機能を `src/debug.rs` に集約
-- `--debug` フラグによるデバッグ環境の自動構築
+```bash
+mise run inspector
+```

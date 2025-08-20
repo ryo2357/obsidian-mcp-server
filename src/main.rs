@@ -1,9 +1,7 @@
 
 
 use clap::Parser;
-use config::Config;
 use debug::DebugConfig;
-use error::AppResult;
 use std::path::PathBuf;
 use once_cell::sync::Lazy;
 use log::{debug};
@@ -11,10 +9,11 @@ use rmcp::{ServiceExt, transport::io::stdio};
 
 mod config;
 mod debug;
-mod error;
 mod vault;
 mod logger;
 mod server;
+
+use config::Config;
 
 
 
@@ -42,7 +41,7 @@ struct Cli {
 }
 
 #[tokio::main]
-async fn main() -> AppResult<()> {
+async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     let config = match cli.debug {
@@ -71,7 +70,6 @@ async fn main() -> AppResult<()> {
           Config::load_or_default(CONFIG_PATH.clone())?
 
         },
-        
     };
 
     // MCP サービスを作成し、標準入出力トランスポートで提供
