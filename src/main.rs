@@ -12,7 +12,7 @@ use rmcp::{ServiceExt, transport::io::stdio};
 mod config;
 mod debug;
 mod error;
-// mod vault;
+mod vault;
 mod logger;
 mod server;
 
