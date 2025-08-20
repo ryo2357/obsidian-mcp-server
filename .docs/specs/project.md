@@ -1,7 +1,7 @@
 # Obsidian MCP Server プロジェクト仕様書
 
 作成日時: 2025-07-31 12:00
-更新日時: 2025-08-20 12:30
+更新日時: 2025-08-20 15:10
 
 ## プロジェクト概要
 
@@ -26,7 +26,7 @@ struct Cli {
 
 - `--debug`: デバッグモードで実行（debug-vault/ を自動使用）
 
-現行 CLI は `--debug` フラグのみを受け付ける最小構成へ簡素化された。（旧: `--config`, `--vault-dir`, `--sync` は削除。設定ファイル位置は固定ロジック化。）
+現行 CLI は `--debug` フラグのみを受け付ける最小構成。
 
 ### 起動時設定ロードフロー
 
@@ -38,16 +38,15 @@ struct Cli {
 ```text
 src/
 ├── main.rs          # エントリポイント / CLI / ロガー初期化 / サービス起動
-├── server.rs        # rmcp ベースの ObsidianServer 実装（ツール登録含む）
-├── config.rs        # アプリ設定 (vault_dir, template_file, tag_list)
+├── server.rs        # rmcp ベースの ObsidianServer 実装（ツール登録 / Vault利用）
+├── config.rs        # アプリ設定 (vault_dir, template_file, output_dir, tag_list)
 ├── debug.rs         # デバッグモード環境構築
 ├── logger.rs        # flexi_logger 初期化
-├── error.rs         # 共通エラー型（AppResult）
-├── vault.rs         # VaultOperations（ファイル保存/検証ユーティリティ）
+├── vault.rs         # VaultOperations（ファイル保存/検証/読込ユーティリティ）
 └── （将来追加予定のモジュールは適宜拡張）
 ```
 
-（旧構成に関する記述は省略）
+（本仕様書は現在有効な構成のみを記述する）
 
 ## データ構造
 
@@ -59,26 +58,38 @@ pub struct Config {
         vault_dir: Option<PathBuf>,
         template_file: Option<PathBuf>,
         #[serde(default)]
+        output_dir: String,
+        #[serde(default)]
         tag_list: Vec<String>,
 }
 ```
 
 - `vault_dir`: Vault ルートパス（必須: 実行前に設定される想定）
-- `template_file`: テンプレートファイル相対パス（任意）
+- `template_file`: テンプレートファイル相対パス（任意。`get_template` で利用）
+- `output_dir`: Markdown 保存先の相対ディレクトリ。デフォルト: `"Tips"`
 - `tag_list`: タグ候補（デフォルト: `["Tips"]`）
+
+メソッド（抜粋）:
+
+- `get_vault_dir() -> anyhow::Result<PathBuf>`
+- `get_template_file() -> Option<PathBuf>`
+- `get_output_dir() -> String`
+- `get_tag_list() -> Vec<String>`
 
 ### VaultOperations (`src/vault.rs`)
 
-ファイル保存とパス検証ユーティリティ。
+ファイル保存 / パス検証 / テキスト読込ユーティリティ。
 
 主メソッド:
 
-- `save_markdown_file`（ファイル存在/境界/名前検証。
-  - `.md` 自動付与
-  - 既存ファイル上書き防止
-  - Windows 予約語 / 危険文字 / ".." 排除）
+- `save_markdown_file`（ファイル存在/境界/名前検証。 - `.md` 自動付与 - 既存ファイル上書き防止 - Windows 予約語 / 危険文字 / ".." 排除）
+- `read_text_file`（安全な相対パス解決後の UTF-8 読込）
+- `resolve_relative_in_vault`（正規化 + Vault 逸脱防止）
+- `get_existing_file_path`
 - `is_path_within_vault`
 - `validate_filename`
+
+（現時点で VaultOperations の単体テストは未収録）
 
 ### MCP サーバー (`src/server.rs`)
 
@@ -86,24 +97,25 @@ pub struct Config {
 
 ```rust
 pub struct ObsidianServer {
-    config: Arc<Mutex<Config>>,
-    tool_router: ToolRouter<ObsidianServer>,
+        config: Arc<Mutex<Config>>,
+        vault: Arc<Mutex<VaultOperations>>,
+        tool_router: ToolRouter<ObsidianServer>,
 }
 ```
 
 提供ツール:
 
-| ツール   | 説明                     | 出力                                                |
-| -------- | ------------------------ | --------------------------------------------------- |
-| get_tags | `Config.tag_list` を列挙 | `CallToolResult` (各タグを text Content として返却) |
+| ツール       | 説明                               | 入力 | 出力                            |
+| ------------ | ---------------------------------- | ---- | ------------------------------- |
+| get_tags     | `Config.tag_list` を列挙           | なし | 各タグ文字列を text Content 群  |
+| get_template | 設定されたテンプレートファイル読込 | なし | テンプレート内容 (text Content) |
 
 `initialize` ハンドラは `ProtocolVersion::V_2024_11_05` と tools capability を返却。
 
 ### エラーハンドリング
 
-アプリ全体: `type AppResult<T> = anyhow::Result<T>`。
-
-ツール: `Result<CallToolResult, McpError>`。
+- アプリ全体: `anyhow::Result`
+- MCP ツール: `Result<CallToolResult, McpError>` （`rmcp::ErrorCode` 利用）
 
 ### ログ出力機能
 
@@ -134,18 +146,10 @@ pub struct ObsidianServer {
 
 開発: tempfile
 
-## 実装済み機能サマリ
+## 実装機能サマリ
 
-- rmcp ベースサーバー (`get_tags` ツール)
-- デバッグ環境自動構築（サンプルノート生成）
-- ファイルロギング（サイズローテーション）
-- Markdown 保存ユーティリティ（API 化前段階）
-
-## 今後の拡張予定
-
-1. `get_tags` のフィルタ / メタ情報拡張
-2. Markdown 保存ツール（push_markdown）公開化
-3. テンプレート取得ツール追加
-4. 設定ホットリロード
-5. Vault 内検索（一覧 / 全文）
-6. メタデータ操作（frontmatter 編集）
+- MCP サーバー（`rmcp`）: ツール `get_tags`, `get_template`
+- 設定ロード & デバッグ用 Vault 自動生成
+- ロギング（サイズローテーション）
+- Vault 内 Markdown 保存ユーティリティ（API 化準備段階）
+- テンプレートファイル安全読込

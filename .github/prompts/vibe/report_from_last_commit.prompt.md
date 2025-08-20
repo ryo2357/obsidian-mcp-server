@@ -15,9 +15,9 @@ description: 'gitでステージングされた実装の仕様書更新と報告
 ### フェーズ 1: ターミナルで変更内容を確認
 
 ```bash
-git show --name-status HEAD
-git show --stat HEAD
-git diff HEAD~1 HEAD
+git --no-pager show --name-status HEAD
+git --no-pager show --stat HEAD
+git --no-pager diff HEAD~1 HEAD
 ```
 
 ### フェーズ 2: 変更内容を解析
